@@ -1,13 +1,13 @@
 diff --git a/Makefile b/Makefile
-index 3b1481e..365cded 100644
+index 3b1481e..8750a67 100644
 --- a/Makefile
 +++ b/Makefile
 @@ -591,6 +591,8 @@ ifeq ($(YQ2_OSTYPE), Emscripten)
  release/index.html : CFLAGS += -fPIC
  release/index.html : LDFLAGS += -sFULL_ES2=1 -sFULL_ES3=1 -sMIN_WEBGL_VERSION=1 -sMAX_WEBGL_VERSION=2 -sMAIN_MODULE=2 \
                                   -sINITIAL_MEMORY=128MB -sTOTAL_STACK=4MB -sALLOW_MEMORY_GROWTH \
-+                                 -sEXPORTED_FUNCTIONS=_main,_Q2_AddViewAngles,_Q2_SetWearableAction \
-+                                 -sEXPORTED_RUNTIME_METHODS=ccall,cwrap,FS,callMain \
++                                 -sEXPORTED_FUNCTIONS='["_main","_Q2_AddViewAngles","_Q2_SetWearableAction"]' \
++                                 -sEXPORTED_RUNTIME_METHODS='["ccall","cwrap","FS","callMain"]' \
                                   --shell-file wasm/shell.html --preload-file=wasm/baseq2@/baseq2 \
                                   release/ref_soft.wasm release/ref_gl1.wasm release/ref_gles3.wasm \
                                   release/game_baseq2.wasm $(WASM_EXTRA_GAMES) -lidbfs.js

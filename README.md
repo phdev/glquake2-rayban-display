@@ -121,4 +121,4 @@ npm run check
 
 ## GitHub Pages
 
-The included workflow deploys `dist/` on pushes to `main`. The public page can host the shell and open-source engine artifacts. Keep game data out of public git history unless you have explicit rights to redistribute it.
+The included workflow installs Emscripten, builds GL4ES, builds the patched Qwasm2 engine, then deploys `dist/` on pushes to `main`. The public page can host the shell and open-source engine artifacts. Keep game data out of public git history unless you have explicit rights to redistribute it.
