@@ -4,6 +4,7 @@ const ENGINE_BASE = `${import.meta.env.BASE_URL}wasm/`;
 const REQUIRED_ENGINE_FILES = [
   "quake2.js",
   "quake2.wasm",
+  "quake2.data",
   "game_baseq2.wasm",
   "ref_gles3.wasm"
 ];
