@@ -1,0 +1,23 @@
+{
+  "inputPak": "/absolute/path/to/original/baseq2/pak0.pak",
+  "outputPak": "dist-pak/baseq2/pak0.pak",
+  "keep": [
+    "maps/base1.bsp",
+    "pics/colormap.pcx",
+    "pics/conchars.pcx",
+    "pics/statusbar.pcx",
+    "pics/i_health.pcx",
+    "pics/w_blaster.pcx",
+    "models/weapons/v_blast/tris.md2",
+    "models/weapons/v_blast/skin.pcx",
+    "models/items/healing/medium/tris.md2",
+    "models/items/healing/medium/skin.pcx",
+    "sound/weapons/blastf1a.wav",
+    "sound/player/male/jump1.wav"
+  ],
+  "silentSoundStubs": [
+    "sound/world/amb10.wav",
+    "sound/player/male/pain25_1.wav",
+    "sound/player/male/death1.wav"
+  ]
+}

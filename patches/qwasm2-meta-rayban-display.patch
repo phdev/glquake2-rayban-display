@@ -1,0 +1,278 @@
+diff --git a/Makefile b/Makefile
+index 3b1481e..365cded 100644
+--- a/Makefile
++++ b/Makefile
+@@ -591,6 +591,8 @@ ifeq ($(YQ2_OSTYPE), Emscripten)
+ release/index.html : CFLAGS += -fPIC
+ release/index.html : LDFLAGS += -sFULL_ES2=1 -sFULL_ES3=1 -sMIN_WEBGL_VERSION=1 -sMAX_WEBGL_VERSION=2 -sMAIN_MODULE=2 \
+                                  -sINITIAL_MEMORY=128MB -sTOTAL_STACK=4MB -sALLOW_MEMORY_GROWTH \
++                                 -sEXPORTED_FUNCTIONS=_main,_Q2_AddViewAngles,_Q2_SetWearableAction \
++                                 -sEXPORTED_RUNTIME_METHODS=ccall,cwrap,FS,callMain \
+                                  --shell-file wasm/shell.html --preload-file=wasm/baseq2@/baseq2 \
+                                  release/ref_soft.wasm release/ref_gl1.wasm release/ref_gles3.wasm \
+                                  release/game_baseq2.wasm $(WASM_EXTRA_GAMES) -lidbfs.js
+diff --git a/src/backends/wasm/initfs.c b/src/backends/wasm/initfs.c
+index 10e35ce..c4e734b 100644
+--- a/src/backends/wasm/initfs.c
++++ b/src/backends/wasm/initfs.c
+@@ -43,7 +43,23 @@ void wasm_init_fs(void)
+ 			else
+ 				console.info("Data loaded.");
+ 
+-			Module.restore_busy = 0;
++			var finishRestore = function () {
++				FS.syncfs(function (syncErr) {
++					if (syncErr)
++						console.warn("Failed to save imported data: " + syncErr);
++
++					Module.restore_busy = 0;
++				});
++			};
++
++			if (typeof Module.q2InstallPendingData === "function") {
++				Promise.resolve(Module.q2InstallPendingData(FS)).then(finishRestore, function (installErr) {
++					console.warn("Failed to install imported data: " + installErr);
++					Module.restore_busy = 0;
++				});
++			} else {
++				Module.restore_busy = 0;
++			}
+ 		});
+ 	);
+ }
+diff --git a/src/client/cl_input.c b/src/client/cl_input.c
+index 32d0e61..63346e6 100644
+--- a/src/client/cl_input.c
++++ b/src/client/cl_input.c
+@@ -28,6 +28,10 @@
+ #include "header/client.h"
+ #include "input/header/input.h"
+ 
++#ifdef __EMSCRIPTEN__
++#include <emscripten/emscripten.h>
++#endif
++
+ cvar_t *cl_nodelta;
+ 
+ unsigned frame_msec;
+@@ -63,6 +67,100 @@ kbutton_t in_up, in_down;
+ 
+ int in_impulse;
+ 
++#ifdef __EMSCRIPTEN__
++enum
++{
++	Q2_WEARABLE_FORWARD,
++	Q2_WEARABLE_ATTACK,
++	Q2_WEARABLE_JUMP,
++	Q2_WEARABLE_CROUCH,
++	Q2_WEARABLE_USE,
++	Q2_WEARABLE_ACTION_COUNT
++};
++
++static qboolean q2_wearable_actions[Q2_WEARABLE_ACTION_COUNT];
++
++static float
++Q2_Normalize360(float angle)
++{
++	while (angle >= 360.0f)
++	{
++		angle -= 360.0f;
++	}
++
++	while (angle < 0.0f)
++	{
++		angle += 360.0f;
++	}
++
++	return angle;
++}
++
++EMSCRIPTEN_KEEPALIVE
++void
++Q2_AddViewAngles(float dyaw, float dpitch)
++{
++	cl.viewangles[YAW] = Q2_Normalize360(cl.viewangles[YAW] + dyaw);
++	cl.viewangles[PITCH] += dpitch;
++
++	if (cl.viewangles[PITCH] > 89.0f)
++	{
++		cl.viewangles[PITCH] = 89.0f;
++	}
++
++	if (cl.viewangles[PITCH] < -89.0f)
++	{
++		cl.viewangles[PITCH] = -89.0f;
++	}
++}
++
++EMSCRIPTEN_KEEPALIVE
++void
++Q2_SetWearableAction(int action, int down)
++{
++	if ((action < 0) || (action >= Q2_WEARABLE_ACTION_COUNT))
++	{
++		return;
++	}
++
++	q2_wearable_actions[action] = down ? true : false;
++}
++
++static void
++Q2_ApplyWearableActions(usercmd_t *cmd)
++{
++	if (!cmd)
++	{
++		return;
++	}
++
++	if (q2_wearable_actions[Q2_WEARABLE_FORWARD] && (cmd->forwardmove < 120))
++	{
++		cmd->forwardmove = 120;
++	}
++
++	if (q2_wearable_actions[Q2_WEARABLE_JUMP] && (cmd->upmove < 200))
++	{
++		cmd->upmove = 200;
++	}
++
++	if (q2_wearable_actions[Q2_WEARABLE_CROUCH] && (cmd->upmove > -200))
++	{
++		cmd->upmove = -200;
++	}
++
++	if (q2_wearable_actions[Q2_WEARABLE_ATTACK])
++	{
++		cmd->buttons |= BUTTON_ATTACK;
++	}
++
++	if (q2_wearable_actions[Q2_WEARABLE_USE])
++	{
++		cmd->buttons |= BUTTON_USE;
++	}
++}
++#endif
++
+ void
+ KeyDown(kbutton_t *b)
+ {
+@@ -490,6 +588,10 @@ CL_BaseMove(usercmd_t *cmd)
+ 		cmd->sidemove *= 2;
+ 		cmd->upmove *= 2;
+ 	}
++
++#ifdef __EMSCRIPTEN__
++	Q2_ApplyWearableActions(cmd);
++#endif
+ }
+ 
+ void
+@@ -851,4 +953,3 @@ CL_SendCmd(void)
+ 	cmd = &cl.cmds[cls.netchan.outgoing_sequence & (CMD_BACKUP - 1)];
+ 	memset(cmd, 0, sizeof(*cmd));
+ }
+-
+diff --git a/src/game/player/client.c b/src/game/player/client.c
+index 4f37cbb..24d0f4f 100644
+--- a/src/game/player/client.c
++++ b/src/game/player/client.c
+@@ -27,6 +27,54 @@
+ #include "../header/local.h"
+ #include "../monster/misc/player.h"
+ 
++#ifdef __EMSCRIPTEN__
++static qboolean
++Q2_WearableEnemyTarget(edict_t *candidate)
++{
++	if (!candidate || !candidate->inuse || !candidate->takedamage)
++	{
++		return false;
++	}
++
++	if (!(candidate->svflags & SVF_MONSTER))
++	{
++		return false;
++	}
++
++	if (candidate->deadflag == DEAD_DEAD)
++	{
++		return false;
++	}
++
++	if (candidate->monsterinfo.aiflags & AI_GOOD_GUY)
++	{
++		return false;
++	}
++
++	return true;
++}
++
++static qboolean
++Q2_WearableShouldAutoFire(edict_t *ent)
++{
++	vec3_t forward, start, end;
++	trace_t tr;
++
++	if (!ent || !ent->client || ent->deadflag)
++	{
++		return false;
++	}
++
++	AngleVectors(ent->client->v_angle, forward, NULL, NULL);
++	VectorCopy(ent->s.origin, start);
++	start[2] += ent->viewheight;
++	VectorMA(start, 1000, forward, end);
++
++	tr = gi.trace(start, NULL, NULL, end, ent, MASK_SHOT);
++	return Q2_WearableEnemyTarget(tr.ent);
++}
++#endif
++
+ void ClientUserinfoChanged(edict_t *ent, char *userinfo);
+ void SP_misc_teleporter_dest(edict_t *ent);
+ void Touch_Item(edict_t *ent, edict_t *other, cplane_t *plane, csurface_t *surf);
+@@ -763,7 +811,11 @@ player_die(edict_t *self, edict_t *inflictor, edict_t *attacker,
+ 
+ 	if (!self->deadflag)
+ 	{
++#ifdef __EMSCRIPTEN__
++		self->client->respawn_time = level.time + 3.0;
++#else
+ 		self->client->respawn_time = level.time + 1.0;
++#endif
+ 		LookAtKiller(self, inflictor, attacker);
+ 		self->client->ps.pmove.pm_type = PM_DEAD;
+ 		ClientObituary(self, inflictor, attacker);
+@@ -2123,6 +2175,13 @@ ClientThink(edict_t *ent, usercmd_t *ucmd)
+ 
+ 	pm_passent = ent;
+ 
++#ifdef __EMSCRIPTEN__
++	if (Q2_WearableShouldAutoFire(ent))
++	{
++		ucmd->buttons |= BUTTON_ATTACK;
++	}
++#endif
++
+ 	if (ent->client->chase_target)
+ 	{
+ 		client->resp.cmd_angles[0] = SHORT2ANGLE(ucmd->angles[0]);
+@@ -2371,6 +2430,10 @@ ClientBeginServerFrame(edict_t *ent)
+ 		/* wait for any button just going down */
+ 		if (level.time > client->respawn_time)
+ 		{
++#ifdef __EMSCRIPTEN__
++			respawn(ent);
++			client->latched_buttons = 0;
++#else
+ 			/* in deathmatch, only wait for attack button */
+ 			if (deathmatch->value)
+ 			{
+@@ -2387,6 +2450,7 @@ ClientBeginServerFrame(edict_t *ent)
+ 				respawn(ent);
+ 				client->latched_buttons = 0;
+ 			}
++#endif
+ 		}
+ 
+ 		return;

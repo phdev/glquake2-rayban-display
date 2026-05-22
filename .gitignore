@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.vite/
+.build/
+dist-pak/
+public/wasm/*.js
+public/wasm/*.wasm
+public/wasm/*.data
+public/wasm/baseq2/
+*.pak
+.DS_Store
