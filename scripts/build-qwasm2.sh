@@ -40,6 +40,12 @@ fi
 install -d wasm/baseq2
 printf '\n' > wasm/baseq2/yq2.cfg
 cat > wasm/baseq2/autoexec.cfg <<'CFG'
+set vid_fullscreen "0"
+set r_customwidth "600"
+set r_customheight "600"
+set vid_width "600"
+set vid_height "600"
+set r_mode "-1"
 alias d1 "map demo1"
 set nextserver ""
 CFG

@@ -79,6 +79,10 @@ try {
     throw new Error(`Expected a square CSS canvas no larger than 600px, got ${webgl.cssWidth}x${webgl.cssHeight}`);
   }
 
+  if (!terminal.includes("Setting mode -1: 600x600")) {
+    throw new Error(`Expected Quake renderer mode -1 to be 600x600:\n${tail(terminal)}`);
+  }
+
   console.log("Smoke test passed.");
   console.log(`Terminal lines: ${terminal.trim().split("\n").length}`);
   console.log(`WebGL context: ${webgl.width}x${webgl.height} CSS ${webgl.cssWidth}x${webgl.cssHeight} ${webgl.vendor} / ${webgl.renderer}`);

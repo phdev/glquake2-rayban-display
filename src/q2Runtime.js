@@ -241,6 +241,8 @@ function buildArguments(config) {
   const args = [
     "+set", "vid_renderer", "gles3",
     "+set", "r_mode", "-1",
+    "+set", "r_customwidth", String(config.width),
+    "+set", "r_customheight", String(config.height),
     "+set", "vid_width", String(config.width),
     "+set", "vid_height", String(config.height),
     "+set", "gl_msaa_samples", "0",
@@ -269,7 +271,7 @@ function hasStartupCommand(args) {
 
 function installRuntimeConfig(FS, config, log, options = {}) {
   const runtimeConfig = buildWasmConfig(config);
-  const autoexecConfig = buildAutoexecConfig();
+  const autoexecConfig = buildAutoexecConfig(config);
 
   mkdirTree(FS, "/baseq2");
   FS.writeFile("/baseq2/wasm.cfg", runtimeConfig);
@@ -291,6 +293,8 @@ function buildWasmConfig(config) {
     "set sensitivity \"6\"",
     "set cl_run \"0\"",
     "set vid_fullscreen \"0\"",
+    `set r_customwidth "${config.width}"`,
+    `set r_customheight "${config.height}"`,
     `set vid_width "${config.width}"`,
     `set vid_height "${config.height}"`,
     "set r_mode \"-1\"",
@@ -320,8 +324,14 @@ function buildWasmConfig(config) {
   ].join("\n");
 }
 
-function buildAutoexecConfig() {
+function buildAutoexecConfig(config) {
   return [
+    "set vid_fullscreen \"0\"",
+    `set r_customwidth "${config.width}"`,
+    `set r_customheight "${config.height}"`,
+    `set vid_width "${config.width}"`,
+    `set vid_height "${config.height}"`,
+    "set r_mode \"-1\"",
     "alias d1 \"map demo1\"",
     "set nextserver \"\"",
     ""
