@@ -118,9 +118,21 @@ export async function bootQuake2({
   canvas.style.aspectRatio = `${config.width} / ${config.height}`;
 
   const module = createModule({ canvas, output, status, config, onStatus, onLog });
+  const runtimeReady = new Promise((resolve, reject) => {
+    module.onRuntimeInitialized = () => resolve();
+    module.onAbort = (reason) => reject(new Error(String(reason || "Quake II aborted")));
+  });
   window.Module = module;
 
   await loadScript(`${ENGINE_BASE}quake2.js`);
+  await runtimeReady;
+  await installPakData(module.FS, onStatus, { writablePath: false });
+
+  if (typeof module.callMain !== "function") {
+    throw new Error("Quake II runtime did not expose callMain");
+  }
+
+  module.callMain([...module.arguments]);
 
   return {
     module,
@@ -171,9 +183,7 @@ function createModule({ canvas, output, status, config, onStatus, onLog }) {
     },
     captureMouse() {},
     q2InstallPendingData: (FS) => installPakData(FS, onStatus),
-    preRun: [
-      (runtimeModule) => installPakBeforeMain(runtimeModule, onStatus)
-    ],
+    noInitialRun: true,
     totalDependencies: 0,
     monitorRunDependencies(left) {
       this.totalDependencies = Math.max(this.totalDependencies, left);
@@ -206,22 +216,6 @@ function buildArguments(config) {
   }
 
   return args;
-}
-
-function installPakBeforeMain(module, onStatus) {
-  if (!module?.FS || typeof module.addRunDependency !== "function") {
-    return;
-  }
-
-  module.addRunDependency("q2-pak");
-  installPakData(module.FS, onStatus, { writablePath: false })
-    .catch((error) => {
-      console.warn(`Failed to install startup PAK: ${error}`);
-      onStatus?.("PAK install failed");
-    })
-    .finally(() => {
-      module.removeRunDependency("q2-pak");
-    });
 }
 
 async function installPakData(FS, onStatus, options = { writablePath: true }) {
