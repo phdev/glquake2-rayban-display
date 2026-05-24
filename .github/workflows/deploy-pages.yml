@@ -32,13 +32,15 @@ jobs:
           git clone --depth 1 https://github.com/emscripten-core/emsdk.git .build/emsdk
           .build/emsdk/emsdk install latest
           .build/emsdk/emsdk activate latest
+      - name: Install Quake II demo data
+        run: npm run install:demo-pak
       - name: Build GLQuake II engine
+        env:
+          Q2_REDUCED_PAK: ${{ github.workspace }}/public/wasm/baseq2/pak0.pak
         run: |
           source .build/emsdk/emsdk_env.sh
           npm run build:gl4es
           GL4ES_PATH="$PWD/.build/gl4es" npm run build:qwasm2
-      - name: Install Quake II demo data
-        run: npm run install:demo-pak
       - run: npm run build
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

@@ -196,13 +196,19 @@ async function installPakData(FS, onStatus) {
 
   if (storedBytes) {
     onStatus?.("Installing imported PAK...");
-    writePak(FS, storedBytes);
+    writePak(FS, storedBytes, "imported");
+    return;
+  }
+
+  if (fileExists(FS, "/baseq2/pak0.pak")) {
+    onStatus?.("Bundled demo PAK ready");
+    console.info("Bundled demo PAK is embedded at /baseq2/pak0.pak");
     return;
   }
 
   const bundledBytes = await readBundledPakBytes(onStatus);
   if (bundledBytes) {
-    writePak(FS, bundledBytes);
+    writePak(FS, bundledBytes, "bundled");
   }
 }
 
@@ -218,9 +224,20 @@ async function readBundledPakBytes(onStatus) {
   return new Uint8Array(await response.arrayBuffer());
 }
 
-function writePak(FS, pakBytes) {
+function writePak(FS, pakBytes, source) {
+  mkdirTree(FS, "/baseq2");
   mkdirTree(FS, "/qwasm2/baseq2");
+  FS.writeFile("/baseq2/pak0.pak", pakBytes);
   FS.writeFile("/qwasm2/baseq2/pak0.pak", pakBytes);
+  console.info(`Installed ${source} PAK at /baseq2/pak0.pak and /qwasm2/baseq2/pak0.pak`);
+}
+
+function fileExists(FS, path) {
+  try {
+    return FS.analyzePath(path).exists;
+  } catch {
+    return false;
+  }
 }
 
 function mkdirTree(FS, path) {

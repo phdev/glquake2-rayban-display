@@ -68,7 +68,7 @@ SDL is the open-source Simple DirectMedia Layer. In this build it handles browse
 
 ## Game Data
 
-Quake II data is not committed to this repository. The Pages workflow downloads the Quake II 3.14 demo package from the Yamagi mirror, verifies the package and `baseq2/pak0.pak`, reduces it to the first demo map, then publishes the reduced demo PAK and its accompanying license text as generated Pages artifacts. The app auto-loads that reduced demo PAK when no user PAK has been imported.
+Quake II data is not committed to this repository. The Pages workflow downloads the Quake II 3.14 demo package from the Yamagi mirror, verifies the package and `baseq2/pak0.pak`, reduces it to the first demo map, embeds that reduced PAK in the Emscripten data package, then publishes the reduced demo PAK and its accompanying license text as generated Pages artifacts. The app uses that embedded demo PAK when no user PAK has been imported.
 
 You can still use your own legally usable `baseq2/pak0.pak`. A manually imported PAK takes precedence over the bundled demo PAK.
 
