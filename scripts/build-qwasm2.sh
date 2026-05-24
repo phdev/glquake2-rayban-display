@@ -37,6 +37,10 @@ else
   rm -f wasm/baseq2/pak0.pak
 fi
 
+install -d wasm/baseq2
+install -m 0644 /dev/null wasm/baseq2/yq2.cfg
+install -m 0644 /dev/null wasm/baseq2/autoexec.cfg
+
 emmake make EMSCRIPTEN=1 GL4ES_PATH="$GL4ES_PATH" -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"
 
 install -d "$PUBLIC_WASM"
