@@ -20,10 +20,19 @@ class PakError(Exception):
 
 def normalize_name(name):
     normalized = name.replace("\\", "/").strip("/")
-    parts = [part for part in normalized.split("/") if part and part != "."]
+    parts = []
 
-    if any(part == ".." for part in parts):
-        raise PakError(f"Unsafe PAK path: {name}")
+    for part in normalized.split("/"):
+        if not part or part == ".":
+            continue
+
+        if part == "..":
+            if not parts:
+                raise PakError(f"Unsafe PAK path: {name}")
+            parts.pop()
+            continue
+
+        parts.append(part)
 
     return "/".join(parts).lower()
 
@@ -166,6 +175,7 @@ def self_test():
 
       write_pak(source, {
           "maps/base1.bsp": b"map",
+          "models/monsters/tank/../ctank/skin.pcx": b"skin",
           "textures/e1/wall.wal": b"wall",
           "sound/world/drip.wav": b"sound"
       })
@@ -185,6 +195,7 @@ def self_test():
       assert files["maps/base1.bsp"] == b"map"
       assert files["textures/e1/wall.wal"] == b"wall"
       assert files["sound/player/missing.wav"].startswith(b"RIFF")
+      assert normalize_name("models/monsters/tank/../ctank/skin.pcx") == "models/monsters/ctank/skin.pcx"
 
     print("paktool self-test passed")
 
