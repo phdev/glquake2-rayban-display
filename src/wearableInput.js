@@ -91,12 +91,12 @@ export function createWearableInput({
     }
 
     if (gesture === "swipeLeft") {
-      onTurnBurst?.(-1);
+      onTurnBurst?.(1);
       return;
     }
 
     if (gesture === "swipeRight") {
-      onTurnBurst?.(1);
+      onTurnBurst?.(-1);
     }
   }
 

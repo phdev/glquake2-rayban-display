@@ -257,18 +257,19 @@ index 4f37cbb..24d0f4f 100644
  	if (ent->client->chase_target)
  	{
  		client->resp.cmd_angles[0] = SHORT2ANGLE(ucmd->angles[0]);
-@@ -2371,6 +2430,10 @@ ClientBeginServerFrame(edict_t *ent)
+@@ -2371,6 +2430,11 @@ ClientBeginServerFrame(edict_t *ent)
  		/* wait for any button just going down */
  		if (level.time > client->respawn_time)
  		{
 +#ifdef __EMSCRIPTEN__
-+			respawn(ent);
++			gi.AddCommandString("map demo1\n");
++			client->respawn_time = level.time + 9999.0;
 +			client->latched_buttons = 0;
 +#else
  			/* in deathmatch, only wait for attack button */
  			if (deathmatch->value)
  			{
-@@ -2387,6 +2450,7 @@ ClientBeginServerFrame(edict_t *ent)
+@@ -2387,6 +2451,7 @@ ClientBeginServerFrame(edict_t *ent)
  				respawn(ent);
  				client->latched_buttons = 0;
  			}

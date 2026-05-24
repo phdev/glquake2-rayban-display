@@ -70,6 +70,28 @@ try {
       };
     })()`
   );
+  const overlay = await evaluate(
+    client,
+    `(() => {
+      const loading = document.querySelector('#loadingPanel');
+      const meter = document.querySelector('#yawMeter');
+      if (!loading || !meter) return null;
+      const loadingStyle = getComputedStyle(loading);
+      const meterStyle = getComputedStyle(meter);
+      const meterBox = meter.getBoundingClientRect();
+      return {
+        loadingHidden:
+          loading.hidden ||
+          loadingStyle.visibility === 'hidden' ||
+          Number(loadingStyle.opacity) < 0.05,
+        meterVisible:
+          meterStyle.visibility !== 'hidden' &&
+          Number(meterStyle.opacity) > 0.05 &&
+          meterBox.width > 0 &&
+          meterBox.height > 0
+      };
+    })()`
+  );
 
   if (!webgl || webgl.width !== 600 || webgl.height !== 600) {
     throw new Error(`Expected a 600x600 render canvas, got ${webgl ? `${webgl.width}x${webgl.height}` : "no WebGL context"}`);
@@ -81,6 +103,14 @@ try {
 
   if (!terminal.includes("Setting mode -1: 600x600")) {
     throw new Error(`Expected Quake renderer mode -1 to be 600x600:\n${tail(terminal)}`);
+  }
+
+  if (!overlay?.loadingHidden) {
+    throw new Error("Expected loading overlay to hide after the map starts");
+  }
+
+  if (!overlay?.meterVisible) {
+    throw new Error("Expected IMU yaw meter to be visible");
   }
 
   console.log("Smoke test passed.");

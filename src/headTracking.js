@@ -128,6 +128,7 @@ export function createHeadTracking({
 
     const normalized = clamp(currentYaw / maxAngle, -1, 1);
     meter.style.setProperty("--yaw", String(normalized));
+    meter.style.setProperty("--yaw-offset", `${normalized * 46}%`);
     meter.dataset.zone =
       Math.abs(currentYaw) <= deadzone
         ? "deadzone"

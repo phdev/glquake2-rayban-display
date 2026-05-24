@@ -47,6 +47,107 @@ body {
   image-rendering: auto;
 }
 
+.loading-panel {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 10px;
+  padding: 24px;
+  background: rgba(5, 5, 5, 0.86);
+  opacity: 1;
+  visibility: visible;
+  pointer-events: none;
+  transition:
+    opacity 180ms ease,
+    visibility 180ms ease;
+}
+
+.loading-panel.is-hidden {
+  opacity: 0;
+  visibility: hidden;
+}
+
+.loading-label {
+  color: #f1eadb;
+  font-size: 0.76rem;
+  line-height: 1;
+}
+
+.loading-track {
+  width: min(280px, 68vw);
+  height: 5px;
+  border: 1px solid #3f3f3b;
+  border-radius: 3px;
+  background: #151513;
+  overflow: hidden;
+}
+
+.loading-bar {
+  width: 0;
+  height: 100%;
+  border-radius: 2px;
+  background: #d9b45f;
+  transition: width 160ms ease;
+}
+
+.yaw-meter {
+  position: fixed;
+  left: 50%;
+  top: 60%;
+  z-index: 1;
+  width: min(240px, 62vw);
+  height: 24px;
+  transform: translate(-50%, -50%);
+  opacity: 0.86;
+  pointer-events: none;
+  --yaw-offset: 0%;
+}
+
+.yaw-meter::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 11px;
+  height: 2px;
+  background: #77746a;
+}
+
+.yaw-meter::after {
+  content: "";
+  position: absolute;
+  left: calc(50% + var(--yaw-offset));
+  top: 3px;
+  width: 4px;
+  height: 18px;
+  border-radius: 2px;
+  background: #8f8c82;
+  box-shadow: 0 0 10px rgba(241, 234, 219, 0.24);
+  transform: translateX(-50%);
+  transition:
+    left 80ms linear,
+    background 80ms linear,
+    box-shadow 80ms linear;
+}
+
+.yaw-meter[data-zone="left"]::after {
+  background: #4ba3ff;
+  box-shadow: 0 0 12px rgba(75, 163, 255, 0.48);
+}
+
+.yaw-meter[data-zone="right"]::after {
+  background: #f2a23a;
+  box-shadow: 0 0 12px rgba(242, 162, 58, 0.5);
+}
+
+.yaw-meter::before,
+.yaw-meter::after {
+  will-change: left, background;
+}
+
 .console-toggle {
   position: fixed;
   right: 10px;

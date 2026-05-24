@@ -110,12 +110,15 @@ export async function bootQuake2({
   output,
   status,
   config,
+  onProgress,
   onStatus,
   onLog
 }) {
   const log = (text) => bootLog(output, text, onLog);
+  const progress = (percent, label) => onProgress?.({ percent, label });
 
   try {
+    progress(2, "Checking files");
     log("Checking engine artifacts...");
     const missing = await withTimeout(
       probeEngineArtifacts(),
@@ -132,7 +135,8 @@ export async function bootQuake2({
     canvas.style.aspectRatio = `${config.width} / ${config.height}`;
     log(`Canvas configured at ${config.width}x${config.height} for ${config.inputMode}`);
 
-    const module = createModule({ canvas, output, status, config, onStatus, onLog });
+    progress(16, "Loading engine");
+    const module = createModule({ canvas, output, status, config, progress, onStatus, onLog });
     const runtimeReady = new Promise((resolve, reject) => {
       module.onRuntimeInitialized = () => resolve();
       module.onAbort = (reason) => reject(new Error(String(reason || "Quake II aborted")));
@@ -142,28 +146,35 @@ export async function bootQuake2({
     log("Loading engine script...");
     await withTimeout(loadScript(`${ENGINE_BASE}quake2.js`), TIMEOUTS.script, "engine script load");
 
+    progress(28, "Preparing runtime");
     log("Waiting for WebAssembly runtime...");
     await withTimeout(runtimeReady, TIMEOUTS.runtime, "WebAssembly runtime initialization");
+    progress(42, "Runtime ready");
     log("Runtime initialized");
 
+    progress(48, "Loading data");
     log("Installing PAK data...");
     await withTimeout(
       installPakData(module.FS, onStatus, {
         writablePath: false,
+        progress,
         log
       }),
       TIMEOUTS.pak,
       "PAK install"
     );
 
+    progress(72, "Configuring");
     installRuntimeConfig(module.FS, config, log);
 
     if (typeof module.callMain !== "function") {
       throw new Error("Quake II runtime did not expose callMain");
     }
 
+    progress(78, "Starting engine");
     log("Starting Quake II main...");
     module.callMain([...module.arguments]);
+    progress(82, "Starting Quake II");
     log("Quake II main started");
 
     return {
@@ -185,7 +196,7 @@ export async function bootQuake2({
   }
 }
 
-function createModule({ canvas, output, status, config, onStatus, onLog }) {
+function createModule({ canvas, output, status, config, progress, onStatus, onLog }) {
   return {
     _canLockPointer: false,
     canvas,
@@ -220,7 +231,9 @@ function createModule({ canvas, output, status, config, onStatus, onLog }) {
     captureMouse() {},
     q2InstallPendingData: async (FS) => {
       const log = (text) => bootLog(output, text, onLog);
-      await installPakData(FS, onStatus, { log });
+      progress?.(48, "Loading data");
+      await installPakData(FS, onStatus, { progress, log });
+      progress?.(72, "Configuring");
       installRuntimeConfig(FS, config, log, { writablePath: true });
     },
     noInitialRun: true,
@@ -341,51 +354,62 @@ function buildAutoexecConfig(config) {
 async function installPakData(FS, onStatus, options = {}) {
   const settings = {
     writablePath: true,
+    progress: null,
     log: null,
     ...options
   };
+  settings.progress?.(50, "Reading data");
   settings.log?.("Reading imported PAK storage...");
   const storedBytes = await readPakBytes();
 
   if (storedBytes) {
+    settings.progress?.(58, "Installing PAK");
     onStatus?.("Installing imported PAK...");
     settings.log?.(`Installing imported PAK (${formatByteCount(storedBytes.byteLength)})...`);
     writePak(FS, storedBytes, "imported", settings);
+    settings.progress?.(68, "PAK ready");
     return;
   }
 
   if (fileExists(FS, "/baseq2/pak0.pak")) {
+    settings.progress?.(68, "PAK ready");
     onStatus?.("Bundled demo PAK ready");
     settings.log?.("Bundled demo PAK is already mounted");
     console.info("Bundled demo PAK is embedded at /baseq2/pak0.pak");
     return;
   }
 
-  const bundledBytes = await readBundledPakBytes(onStatus, settings.log);
+  const bundledBytes = await readBundledPakBytes(onStatus, settings.log, settings.progress);
   if (bundledBytes) {
+    settings.progress?.(64, "Installing PAK");
     settings.log?.(`Installing bundled PAK (${formatByteCount(bundledBytes.byteLength)})...`);
     writePak(FS, bundledBytes, "bundled", settings);
+    settings.progress?.(68, "PAK ready");
   }
 }
 
-async function readBundledPakBytes(onStatus, log) {
+async function readBundledPakBytes(onStatus, log, progress) {
   if ("DecompressionStream" in globalThis) {
+    progress?.(54, "Fetching PAK");
     onStatus?.("Loading compressed demo PAK...");
     log?.("Fetching compressed demo PAK...");
     const compressed = await fetchBytes(BUNDLED_PAK_GZIP_URL);
     if (compressed) {
       if (isGzipPayload(compressed)) {
+        progress?.(60, "Decompressing PAK");
         onStatus?.("Decompressing demo PAK...");
         log?.(`Decompressing demo PAK (${formatByteCount(compressed.byteLength)} compressed)...`);
         return decompressGzip(compressed);
       }
 
+      progress?.(60, "Loading PAK");
       log?.(`Using browser-decoded demo PAK (${formatByteCount(compressed.byteLength)})...`);
       return compressed;
     }
     log?.("Compressed demo PAK was not found; trying raw PAK...");
   }
 
+  progress?.(54, "Fetching PAK");
   onStatus?.("Loading demo PAK...");
   log?.("Fetching raw demo PAK...");
   const bytes = await fetchBytes(BUNDLED_PAK_URL);
