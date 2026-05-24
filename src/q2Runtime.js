@@ -40,11 +40,11 @@ export function createRuntimeConfig() {
         headTickMs: 50
       }
     : {
-        width: 960,
-        height: 720,
+        width: 600,
+        height: 600,
         inputMode: "desktop",
         lowLatencyControls: false,
-        audioEnabled: true,
+        audioEnabled: false,
         yawSensitivity: 1.8,
         turnBurstDegrees: 10,
         headTickMs: 50
@@ -156,6 +156,8 @@ export async function bootQuake2({
       "PAK install"
     );
 
+    installRuntimeConfig(module.FS, config, log);
+
     if (typeof module.callMain !== "function") {
       throw new Error("Quake II runtime did not expose callMain");
     }
@@ -178,7 +180,7 @@ export async function bootQuake2({
       }
     };
   } catch (error) {
-    log(`Error: ${error.message || error}`);
+    log(`Error: ${formatError(error)}`);
     throw error;
   }
 }
@@ -216,9 +218,11 @@ function createModule({ canvas, output, status, config, onStatus, onLog }) {
       canvas.style.filter = gamma < 0 ? "" : `brightness(${gamma * 2})`;
     },
     captureMouse() {},
-    q2InstallPendingData: (FS) => installPakData(FS, onStatus, {
-      log: (text) => bootLog(output, text, onLog)
-    }),
+    q2InstallPendingData: async (FS) => {
+      const log = (text) => bootLog(output, text, onLog);
+      await installPakData(FS, onStatus, { log });
+      installRuntimeConfig(FS, config, log, { writablePath: true });
+    },
     noInitialRun: true,
     totalDependencies: 0,
     monitorRunDependencies(left) {
@@ -261,6 +265,67 @@ function buildArguments(config) {
 function hasStartupCommand(args) {
   const commands = new Set(["+map", "+demomap", "+connect", "+load"]);
   return args.some((arg) => commands.has(arg.toLowerCase()));
+}
+
+function installRuntimeConfig(FS, config, log, options = {}) {
+  const runtimeConfig = buildWasmConfig(config);
+  const autoexecConfig = buildAutoexecConfig();
+
+  mkdirTree(FS, "/baseq2");
+  FS.writeFile("/baseq2/wasm.cfg", runtimeConfig);
+  FS.writeFile("/baseq2/autoexec.cfg", autoexecConfig);
+
+  if (options.writablePath) {
+    mkdirTree(FS, "/qwasm2/baseq2");
+    FS.writeFile("/qwasm2/baseq2/wasm.cfg", runtimeConfig);
+    FS.writeFile("/qwasm2/baseq2/autoexec.cfg", autoexecConfig);
+  }
+
+  log(`Installed runtime config (${config.width}x${config.height})`);
+}
+
+function buildWasmConfig(config) {
+  return [
+    "// GLQuake II Display runtime configuration",
+    "set name \"WASM Player\"",
+    "set sensitivity \"6\"",
+    "set cl_run \"0\"",
+    "set vid_fullscreen \"0\"",
+    `set vid_width "${config.width}"`,
+    `set vid_height "${config.height}"`,
+    "set r_mode \"-1\"",
+    "set r_vsync \"0\"",
+    "set gl_texturemode \"GL_LINEAR_MIPMAP_LINEAR\"",
+    "set gl1_intensity \"1.5\"",
+    "set gl1_overbrightbits \"1\"",
+    "set gl3_intensity \"2\"",
+    "set r_consolescale \"1\"",
+    "set r_hudscale \"1\"",
+    "set r_menuscale \"1\"",
+    "set crosshair_scale \"1\"",
+    "bind w \"+forward\"",
+    "bind s \"+back\"",
+    "bind a \"+moveleft\"",
+    "bind d \"+moveright\"",
+    "bind MOUSE1 \"+attack\"",
+    "bind MOUSE2 \"+forward\"",
+    "bind MOUSE3 \"+moveup\"",
+    "bind MWHEELDOWN \"weapnext\"",
+    "bind MWHEELUP \"weapprev\"",
+    "bind z \"use silencer\"",
+    "bind f \"+lookup\"",
+    "bind v \"+lookdown\"",
+    "echo \"Display runtime config loaded\"",
+    ""
+  ].join("\n");
+}
+
+function buildAutoexecConfig() {
+  return [
+    "alias d1 \"map demo1\"",
+    "set nextserver \"\"",
+    ""
+  ].join("\n");
 }
 
 async function installPakData(FS, onStatus, options = {}) {
@@ -390,6 +455,22 @@ function formatByteCount(value) {
   }
 
   return `${amount.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
+}
+
+function formatError(error) {
+  if (error?.message) {
+    return error.message;
+  }
+
+  if (typeof error === "string") {
+    return error;
+  }
+
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
 }
 
 function isGzipPayload(bytes) {

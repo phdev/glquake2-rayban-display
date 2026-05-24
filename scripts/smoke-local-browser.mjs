@@ -22,7 +22,9 @@ const IGNORED_CHROME_STDERR = [
   /GoogleUpdater/,
   /Crashpad\/settings\.dat/,
   /task_policy_set TASK_/,
-  /SharedImageManager::ProduceSkia/
+  /SharedImageManager::ProduceSkia/,
+  /SharedImageManager::ProduceOverlay/,
+  /Invalid mailbox/
 ];
 
 const processes = [];
@@ -57,20 +59,29 @@ try {
       if (!canvas) return null;
       const gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
       if (!gl) return null;
+      const box = canvas.getBoundingClientRect();
       return {
         width: canvas.width,
         height: canvas.height,
+        cssWidth: Math.round(box.width),
+        cssHeight: Math.round(box.height),
         vendor: gl.getParameter(gl.VENDOR),
         renderer: gl.getParameter(gl.RENDERER)
       };
     })()`
   );
 
+  if (!webgl || webgl.width !== 600 || webgl.height !== 600) {
+    throw new Error(`Expected a 600x600 render canvas, got ${webgl ? `${webgl.width}x${webgl.height}` : "no WebGL context"}`);
+  }
+
+  if (webgl.cssWidth !== webgl.cssHeight || webgl.cssWidth > 600 || webgl.cssHeight > 600) {
+    throw new Error(`Expected a square CSS canvas no larger than 600px, got ${webgl.cssWidth}x${webgl.cssHeight}`);
+  }
+
   console.log("Smoke test passed.");
   console.log(`Terminal lines: ${terminal.trim().split("\n").length}`);
-  if (webgl) {
-    console.log(`WebGL context: ${webgl.width}x${webgl.height} ${webgl.vendor} / ${webgl.renderer}`);
-  }
+  console.log(`WebGL context: ${webgl.width}x${webgl.height} CSS ${webgl.cssWidth}x${webgl.cssHeight} ${webgl.vendor} / ${webgl.renderer}`);
 } finally {
   client?.close();
   await cleanup();
@@ -204,7 +215,7 @@ async function waitForBootSuccess(client) {
     latest = await evaluate(client, "document.querySelector('#consoleOutput')?.value || ''");
 
     if (
-      /\\[boot\\] Error:|recursive shutdown|ERROR: Couldn't open|GetPCXPalette: Couldn't load|Server does not have this file/i.test(latest)
+      /\[boot\] Error:|recursive shutdown|ERROR: Couldn't open|GetPCXPalette: Couldn't load|Server does not have this file/i.test(latest)
     ) {
       throw new Error(`Quake boot failed:\n${tail(latest)}`);
     }

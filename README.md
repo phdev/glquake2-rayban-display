@@ -16,7 +16,7 @@ var glassesDetected =
   || screen.width <= 640;
 ```
 
-- 800x600 wearable profile and 960x720 desktop profile.
+- 600x600 wearable and desktop runtime profiles.
 - Capture-phase gesture input normalization.
 - Sticky forward movement, fire, jump plus fire, recenter, and turn burst actions.
 - IMU yaw joystick model with a 50ms tick, 7.5 degree deadzone, and 30 degree max angle.
