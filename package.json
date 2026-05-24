@@ -9,6 +9,7 @@
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0",
     "check": "npm run build && python3 scripts/paktool.py --self-test",
+    "smoke:local": "npm run build && node scripts/smoke-local-browser.mjs",
     "build:gl4es": "bash scripts/build-gl4es.sh",
     "build:qwasm2": "bash scripts/build-qwasm2.sh",
     "install:demo-pak": "bash scripts/install-demo-pak.sh",

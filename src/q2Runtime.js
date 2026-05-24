@@ -290,9 +290,14 @@ async function readBundledPakBytes(onStatus, log) {
     log?.("Fetching compressed demo PAK...");
     const compressed = await fetchBytes(BUNDLED_PAK_GZIP_URL);
     if (compressed) {
-      onStatus?.("Decompressing demo PAK...");
-      log?.(`Decompressing demo PAK (${formatByteCount(compressed.byteLength)} compressed)...`);
-      return decompressGzip(compressed);
+      if (isGzipPayload(compressed)) {
+        onStatus?.("Decompressing demo PAK...");
+        log?.(`Decompressing demo PAK (${formatByteCount(compressed.byteLength)} compressed)...`);
+        return decompressGzip(compressed);
+      }
+
+      log?.(`Using browser-decoded demo PAK (${formatByteCount(compressed.byteLength)})...`);
+      return compressed;
     }
     log?.("Compressed demo PAK was not found; trying raw PAK...");
   }
@@ -324,6 +329,10 @@ async function decompressGzip(bytes) {
 }
 
 function writePak(FS, pakBytes, source, options) {
+  if (!isPakPayload(pakBytes)) {
+    throw new Error(`${source} data is not a valid Quake II PAK`);
+  }
+
   mkdirTree(FS, "/baseq2");
   FS.writeFile("/baseq2/pak0.pak", pakBytes);
 
@@ -374,6 +383,20 @@ function formatByteCount(value) {
   return `${amount.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
 }
 
+function isGzipPayload(bytes) {
+  return bytes.byteLength >= 2 && bytes[0] === 0x1f && bytes[1] === 0x8b;
+}
+
+function isPakPayload(bytes) {
+  return (
+    bytes.byteLength >= 4 &&
+    bytes[0] === 0x50 &&
+    bytes[1] === 0x41 &&
+    bytes[2] === 0x43 &&
+    bytes[3] === 0x4b
+  );
+}
+
 function fileExists(FS, path) {
   try {
     return FS.analyzePath(path).exists;
@@ -388,10 +411,14 @@ function mkdirTree(FS, path) {
 
   for (const part of parts) {
     current += `/${part}`;
+    if (fileExists(FS, current)) {
+      continue;
+    }
+
     try {
       FS.mkdir(current);
     } catch (error) {
-      if (!String(error).includes("File exists")) {
+      if (!fileExists(FS, current)) {
         throw error;
       }
     }
