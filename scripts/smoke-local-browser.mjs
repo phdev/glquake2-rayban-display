@@ -75,10 +75,15 @@ try {
     `(() => {
       const loading = document.querySelector('#loadingPanel');
       const meter = document.querySelector('#yawMeter');
-      if (!loading || !meter) return null;
+      const renderer = document.querySelector('#renderStatus');
+      const enemyLeft = document.querySelector('#enemyLeftIndicator');
+      const enemyRight = document.querySelector('#enemyRightIndicator');
+      if (!loading || !meter || !renderer || !enemyLeft || !enemyRight) return null;
       const loadingStyle = getComputedStyle(loading);
       const meterStyle = getComputedStyle(meter);
+      const rendererStyle = getComputedStyle(renderer);
       const meterBox = meter.getBoundingClientRect();
+      const rendererBox = renderer.getBoundingClientRect();
       return {
         loadingHidden:
           loading.hidden ||
@@ -88,7 +93,16 @@ try {
           meterStyle.visibility !== 'hidden' &&
           Number(meterStyle.opacity) > 0.05 &&
           meterBox.width > 0 &&
-          meterBox.height > 0
+          meterBox.height > 0,
+        rendererVisible:
+          rendererStyle.visibility !== 'hidden' &&
+          Number(rendererStyle.opacity || '1') > 0.05 &&
+          rendererBox.width > 0 &&
+          rendererBox.height > 0,
+        rendererMode: renderer.dataset.mode || '',
+        rendererText: renderer.textContent || '',
+        enemyLeftAttached: Boolean(enemyLeft),
+        enemyRightAttached: Boolean(enemyRight)
       };
     })()`
   );
@@ -113,9 +127,18 @@ try {
     throw new Error("Expected IMU yaw meter to be visible");
   }
 
+  if (!overlay?.rendererVisible || !["gpu", "software"].includes(overlay.rendererMode)) {
+    throw new Error(`Expected visible renderer status to report gpu/software, got ${JSON.stringify(overlay)}`);
+  }
+
+  if (!overlay.enemyLeftAttached || !overlay.enemyRightAttached) {
+    throw new Error("Expected enemy side indicators to be present");
+  }
+
   console.log("Smoke test passed.");
   console.log(`Terminal lines: ${terminal.trim().split("\n").length}`);
   console.log(`WebGL context: ${webgl.width}x${webgl.height} CSS ${webgl.cssWidth}x${webgl.cssHeight} ${webgl.vendor} / ${webgl.renderer}`);
+  console.log(`Renderer status: ${overlay.rendererText.trim()} (${overlay.rendererMode})`);
 } finally {
   client?.close();
   await cleanup();

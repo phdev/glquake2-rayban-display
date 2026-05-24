@@ -110,6 +110,7 @@ export async function bootQuake2({
   output,
   status,
   config,
+  onEnemyIndicators,
   onProgress,
   onStatus,
   onLog
@@ -136,7 +137,16 @@ export async function bootQuake2({
     log(`Canvas configured at ${config.width}x${config.height} for ${config.inputMode}`);
 
     progress(16, "Loading engine");
-    const module = createModule({ canvas, output, status, config, progress, onStatus, onLog });
+    const module = createModule({
+      canvas,
+      output,
+      status,
+      config,
+      progress,
+      onEnemyIndicators,
+      onStatus,
+      onLog
+    });
     const runtimeReady = new Promise((resolve, reject) => {
       module.onRuntimeInitialized = () => resolve();
       module.onAbort = (reason) => reject(new Error(String(reason || "Quake II aborted")));
@@ -188,6 +198,29 @@ export async function bootQuake2({
         if (typeof module._Q2_SetWearableAction === "function") {
           module._Q2_SetWearableAction(action, down ? 1 : 0);
         }
+      },
+      readEnemyIndicators() {
+        if (typeof module._Q2_GetEnemyIndicators === "function") {
+          const mask = module._Q2_GetEnemyIndicators();
+          return {
+            left: Boolean(mask & 1),
+            right: Boolean(mask & 2)
+          };
+        }
+
+        return {
+          left: Boolean(module.q2EnemyIndicators?.left),
+          right: Boolean(module.q2EnemyIndicators?.right)
+        };
+      },
+      requestEnemyTurn(direction) {
+        const normalized = direction < 0 ? -1 : direction > 0 ? 1 : 0;
+        if (typeof module._Q2_RequestEnemyTurn === "function") {
+          module._Q2_RequestEnemyTurn(normalized);
+          return;
+        }
+
+        module.q2EnemyTurnRequest = normalized;
       }
     };
   } catch (error) {
@@ -196,10 +229,41 @@ export async function bootQuake2({
   }
 }
 
-function createModule({ canvas, output, status, config, progress, onStatus, onLog }) {
+function createModule({
+  canvas,
+  output,
+  status,
+  config,
+  progress,
+  onEnemyIndicators,
+  onStatus,
+  onLog
+}) {
   return {
     _canLockPointer: false,
     canvas,
+    q2EnemyTurnRequest: 0,
+    q2EnemyIndicators: { left: false, right: false },
+    q2ConsumeEnemyTurn() {
+      const direction = this.q2EnemyTurnRequest;
+      this.q2EnemyTurnRequest = 0;
+      return direction;
+    },
+    q2SetEnemyIndicators(left, right) {
+      this.q2EnemyIndicators = {
+        left: Boolean(left),
+        right: Boolean(right)
+      };
+      onEnemyIndicators?.({
+        left: Boolean(left),
+        right: Boolean(right)
+      });
+    },
+    q2TurnToEnemyYaw(yaw) {
+      if (typeof this._Q2_SetViewYaw === "function") {
+        this._Q2_SetViewYaw(yaw);
+      }
+    },
     print(text) {
       appendOutput(output, text);
       onLog?.(text);

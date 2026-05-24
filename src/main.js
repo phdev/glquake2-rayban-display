@@ -12,10 +12,18 @@ let headTracking = null;
 let wearableInput = null;
 let loadingProgress = 0;
 let loadingHideTimer = 0;
+let enemyIndicatorTimer = 0;
+const enemyPresence = {
+  left: false,
+  right: false
+};
 
 app.innerHTML = `
   <main class="game-shell" aria-label="GLQuake II runtime">
     <canvas id="gameCanvas" class="game-canvas" tabindex="-1"></canvas>
+    <div id="renderStatus" class="render-status" data-mode="unknown" aria-label="Renderer status">Renderer</div>
+    <div id="enemyLeftIndicator" class="enemy-indicator enemy-indicator-left" aria-hidden="true"></div>
+    <div id="enemyRightIndicator" class="enemy-indicator enemy-indicator-right" aria-hidden="true"></div>
     <section id="loadingPanel" class="loading-panel" role="status" aria-live="polite">
       <div id="loadingLabel" class="loading-label">Loading</div>
       <div
@@ -41,6 +49,9 @@ app.innerHTML = `
 
 const refs = {
   canvas: document.querySelector("#gameCanvas"),
+  renderStatus: document.querySelector("#renderStatus"),
+  enemyLeftIndicator: document.querySelector("#enemyLeftIndicator"),
+  enemyRightIndicator: document.querySelector("#enemyRightIndicator"),
   loadingPanel: document.querySelector("#loadingPanel"),
   loadingLabel: document.querySelector("#loadingLabel"),
   loadingProgress: document.querySelector("#loadingProgress"),
@@ -87,6 +98,7 @@ async function start() {
       onStatus: (text) => {
         refs.statusText.textContent = text;
       },
+      onEnemyIndicators: setEnemyIndicators,
       onLog: handleRuntimeLog
     });
 
@@ -102,10 +114,13 @@ async function start() {
     wearableInput = createWearableInput({
       getEngine: () => engine,
       onRecenter: () => headTracking.recenter(),
-      onTurnBurst: (direction) => headTracking.addTurnBurst(direction)
+      onTurnBurst: (direction) => headTracking.addTurnBurst(direction),
+      hasEnemySide: (side) => Boolean(enemyPresence[side]),
+      onEnemyTurnRequest: (direction) => engine.requestEnemyTurn(direction)
     });
 
     wearableInput.install();
+    startEnemyIndicatorPolling();
     await startHeadTracking();
     refs.statusText.textContent = "Running";
     setLoadingProgress(92, "Starting map");
@@ -139,8 +154,15 @@ function appendTerminal(text) {
 function handleRuntimeLog(text) {
   if (/Loading library: ref_gles3/i.test(text)) {
     setLoadingProgress(82, "Loading renderer");
+    setRenderStatus("gpu", "OpenGL ES/WebGL renderer loading");
   } else if (/Successfully loaded ref_gles3/i.test(text)) {
     setLoadingProgress(88, "Loading game");
+    setRenderStatus("gpu", "OpenGL ES/WebGL renderer active");
+  } else if (/Loading library: ref_soft/i.test(text)) {
+    setRenderStatus("software", "Software renderer loading");
+  } else if (/GL_RENDERER:\s*(.+)$/i.test(text)) {
+    const [, renderer] = text.match(/GL_RENDERER:\s*(.+)$/i);
+    setRenderStatus(classifyRenderer(renderer), renderer);
   } else if (/Loading library: game_baseq2/i.test(text)) {
     setLoadingProgress(90, "Loading game");
   } else if (/==== Yamagi Quake II Initialized ====/i.test(text)) {
@@ -149,6 +171,32 @@ function handleRuntimeLog(text) {
     setLoadingProgress(100, "Ready");
     scheduleLoadingHide(350);
   }
+}
+
+function startEnemyIndicatorPolling() {
+  window.clearInterval(enemyIndicatorTimer);
+  enemyIndicatorTimer = window.setInterval(() => {
+    setEnemyIndicators(engine?.readEnemyIndicators?.() ?? { left: false, right: false });
+  }, 90);
+}
+
+function setEnemyIndicators({ left, right }) {
+  enemyPresence.left = Boolean(left);
+  enemyPresence.right = Boolean(right);
+  refs.enemyLeftIndicator.classList.toggle("is-visible", enemyPresence.left);
+  refs.enemyRightIndicator.classList.toggle("is-visible", enemyPresence.right);
+}
+
+function setRenderStatus(mode, detail) {
+  refs.renderStatus.dataset.mode = mode;
+  refs.renderStatus.textContent = mode === "software" ? "Software" : mode === "gpu" ? "GPU" : "Renderer";
+  refs.renderStatus.title = detail ? `Renderer: ${detail}` : "Renderer status";
+}
+
+function classifyRenderer(renderer) {
+  return /swiftshader|software|llvmpipe|softpipe|warp|mesa offscreen|cpu/i.test(renderer)
+    ? "software"
+    : "gpu";
 }
 
 function setLoadingProgress(percent, label) {

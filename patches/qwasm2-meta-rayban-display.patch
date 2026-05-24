@@ -1,12 +1,12 @@
 diff --git a/Makefile b/Makefile
-index 3b1481e..8750a67 100644
+index 3b1481e..aa467d7 100644
 --- a/Makefile
 +++ b/Makefile
 @@ -591,6 +591,8 @@ ifeq ($(YQ2_OSTYPE), Emscripten)
  release/index.html : CFLAGS += -fPIC
  release/index.html : LDFLAGS += -sFULL_ES2=1 -sFULL_ES3=1 -sMIN_WEBGL_VERSION=1 -sMAX_WEBGL_VERSION=2 -sMAIN_MODULE=2 \
                                   -sINITIAL_MEMORY=128MB -sTOTAL_STACK=4MB -sALLOW_MEMORY_GROWTH \
-+                                 -sEXPORTED_FUNCTIONS='["_main","_Q2_AddViewAngles","_Q2_SetWearableAction"]' \
++                                 -sEXPORTED_FUNCTIONS='["_main","_Q2_AddViewAngles","_Q2_SetViewYaw","_Q2_SetWearableAction","_Q2_GetEnemyIndicators","_Q2_RequestEnemyTurn","_Q2_SetEnemyIndicators","_Q2_ConsumeEnemyTurn"]' \
 +                                 -sEXPORTED_RUNTIME_METHODS='["ccall","cwrap","FS","callMain"]' \
                                   --shell-file wasm/shell.html --preload-file=wasm/baseq2@/baseq2 \
                                   release/ref_soft.wasm release/ref_gl1.wasm release/ref_gles3.wasm \
@@ -41,7 +41,7 @@ index 10e35ce..c4e734b 100644
  	);
  }
 diff --git a/src/client/cl_input.c b/src/client/cl_input.c
-index 32d0e61..63346e6 100644
+index 32d0e61..10162e8 100644
 --- a/src/client/cl_input.c
 +++ b/src/client/cl_input.c
 @@ -28,6 +28,10 @@
@@ -55,7 +55,7 @@ index 32d0e61..63346e6 100644
  cvar_t *cl_nodelta;
  
  unsigned frame_msec;
-@@ -63,6 +67,100 @@ kbutton_t in_up, in_down;
+@@ -63,6 +67,150 @@ kbutton_t in_up, in_down;
  
  int in_impulse;
  
@@ -71,6 +71,8 @@ index 32d0e61..63346e6 100644
 +};
 +
 +static qboolean q2_wearable_actions[Q2_WEARABLE_ACTION_COUNT];
++static int q2_wearable_enemy_indicators;
++static int q2_wearable_enemy_turn_request;
 +
 +static float
 +Q2_Normalize360(float angle)
@@ -104,6 +106,54 @@ index 32d0e61..63346e6 100644
 +	{
 +		cl.viewangles[PITCH] = -89.0f;
 +	}
++}
++
++EMSCRIPTEN_KEEPALIVE
++void
++Q2_SetViewYaw(float yaw)
++{
++	cl.viewangles[YAW] = Q2_Normalize360(yaw);
++}
++
++EMSCRIPTEN_KEEPALIVE
++int
++Q2_GetEnemyIndicators(void)
++{
++	return q2_wearable_enemy_indicators;
++}
++
++EMSCRIPTEN_KEEPALIVE
++void
++Q2_RequestEnemyTurn(int direction)
++{
++	if (direction < 0)
++	{
++		q2_wearable_enemy_turn_request = -1;
++	}
++	else if (direction > 0)
++	{
++		q2_wearable_enemy_turn_request = 1;
++	}
++	else
++	{
++		q2_wearable_enemy_turn_request = 0;
++	}
++}
++
++EMSCRIPTEN_KEEPALIVE
++void
++Q2_SetEnemyIndicators(int left, int right)
++{
++	q2_wearable_enemy_indicators = (left ? 1 : 0) | (right ? 2 : 0);
++}
++
++EMSCRIPTEN_KEEPALIVE
++int
++Q2_ConsumeEnemyTurn(void)
++{
++	const int direction = q2_wearable_enemy_turn_request;
++	q2_wearable_enemy_turn_request = 0;
++	return direction;
 +}
 +
 +EMSCRIPTEN_KEEPALIVE
@@ -156,7 +206,7 @@ index 32d0e61..63346e6 100644
  void
  KeyDown(kbutton_t *b)
  {
-@@ -490,6 +588,10 @@ CL_BaseMove(usercmd_t *cmd)
+@@ -490,6 +638,10 @@ CL_BaseMove(usercmd_t *cmd)
  		cmd->sidemove *= 2;
  		cmd->upmove *= 2;
  	}
@@ -167,20 +217,28 @@ index 32d0e61..63346e6 100644
  }
  
  void
-@@ -851,4 +953,3 @@ CL_SendCmd(void)
+@@ -851,4 +1003,3 @@ CL_SendCmd(void)
  	cmd = &cl.cmds[cls.netchan.outgoing_sequence & (CMD_BACKUP - 1)];
  	memset(cmd, 0, sizeof(*cmd));
  }
 -
 diff --git a/src/game/player/client.c b/src/game/player/client.c
-index 4f37cbb..24d0f4f 100644
+index 4f37cbb..897677e 100644
 --- a/src/game/player/client.c
 +++ b/src/game/player/client.c
-@@ -27,6 +27,54 @@
+@@ -27,6 +27,158 @@
  #include "../header/local.h"
  #include "../monster/misc/player.h"
  
 +#ifdef __EMSCRIPTEN__
++#define Q2_WEARABLE_ENEMY_RANGE 900.0f
++#define Q2_WEARABLE_SIDE_DOT 0.25f
++#define Q2_WEARABLE_CENTER_DOT 0.70f
++
++extern int Q2_ConsumeEnemyTurn(void);
++extern void Q2_SetEnemyIndicators(int left, int right);
++extern void Q2_SetViewYaw(float yaw);
++
 +static qboolean
 +Q2_WearableEnemyTarget(edict_t *candidate)
 +{
@@ -226,12 +284,108 @@ index 4f37cbb..24d0f4f 100644
 +	tr = gi.trace(start, NULL, NULL, end, ent, MASK_SHOT);
 +	return Q2_WearableEnemyTarget(tr.ent);
 +}
++
++static edict_t *
++Q2_WearableFindSideEnemy(edict_t *ent, int direction, float *yaw_out)
++{
++	vec3_t forward, right, offset, angles;
++	edict_t *best;
++	float best_dist;
++	int i;
++
++	if (!ent || !ent->client || ent->deadflag)
++	{
++		return NULL;
++	}
++
++	best = NULL;
++	best_dist = Q2_WEARABLE_ENEMY_RANGE + 1.0f;
++
++	AngleVectors(ent->client->v_angle, forward, right, NULL);
++
++	for (i = 1; i < globals.num_edicts; i++)
++	{
++		edict_t *candidate = &g_edicts[i];
++		float dist, side, center;
++
++		if (!Q2_WearableEnemyTarget(candidate))
++		{
++			continue;
++		}
++
++		VectorSubtract(candidate->s.origin, ent->s.origin, offset);
++		offset[2] = 0;
++		dist = VectorNormalize(offset);
++
++		if ((dist <= 1.0f) || (dist > Q2_WEARABLE_ENEMY_RANGE))
++		{
++			continue;
++		}
++
++		side = DotProduct(offset, right);
++		center = DotProduct(offset, forward);
++
++		if (((direction < 0) && (side > -Q2_WEARABLE_SIDE_DOT)) ||
++			((direction > 0) && (side < Q2_WEARABLE_SIDE_DOT)))
++		{
++			continue;
++		}
++
++		if (center > Q2_WEARABLE_CENTER_DOT)
++		{
++			continue;
++		}
++
++		if (dist < best_dist)
++		{
++			best = candidate;
++			best_dist = dist;
++
++			if (yaw_out)
++			{
++				vectoangles(offset, angles);
++				*yaw_out = angles[YAW];
++			}
++		}
++	}
++
++	return best;
++}
++
++static void
++Q2_WearableUpdateEnemyAssist(edict_t *ent, usercmd_t *ucmd)
++{
++	int turn;
++	float yaw;
++	qboolean left, right;
++
++	if (!ent || !ent->client || ent->deadflag)
++	{
++		Q2_SetEnemyIndicators(false, false);
++		return;
++	}
++
++	left = Q2_WearableFindSideEnemy(ent, -1, NULL) != NULL;
++	right = Q2_WearableFindSideEnemy(ent, 1, NULL) != NULL;
++	Q2_SetEnemyIndicators(left, right);
++
++	turn = Q2_ConsumeEnemyTurn();
++	yaw = 0.0f;
++
++	if (((turn < 0) && Q2_WearableFindSideEnemy(ent, -1, &yaw)) ||
++		((turn > 0) && Q2_WearableFindSideEnemy(ent, 1, &yaw)))
++	{
++		ent->client->v_angle[YAW] = yaw;
++		ucmd->angles[YAW] = ANGLE2SHORT(yaw);
++		Q2_SetViewYaw(yaw);
++	}
++}
 +#endif
 +
  void ClientUserinfoChanged(edict_t *ent, char *userinfo);
  void SP_misc_teleporter_dest(edict_t *ent);
  void Touch_Item(edict_t *ent, edict_t *other, cplane_t *plane, csurface_t *surf);
-@@ -763,7 +811,11 @@ player_die(edict_t *self, edict_t *inflictor, edict_t *attacker,
+@@ -763,7 +915,11 @@ player_die(edict_t *self, edict_t *inflictor, edict_t *attacker,
  
  	if (!self->deadflag)
  	{
@@ -243,11 +397,13 @@ index 4f37cbb..24d0f4f 100644
  		LookAtKiller(self, inflictor, attacker);
  		self->client->ps.pmove.pm_type = PM_DEAD;
  		ClientObituary(self, inflictor, attacker);
-@@ -2123,6 +2175,13 @@ ClientThink(edict_t *ent, usercmd_t *ucmd)
+@@ -2123,6 +2279,15 @@ ClientThink(edict_t *ent, usercmd_t *ucmd)
  
  	pm_passent = ent;
  
 +#ifdef __EMSCRIPTEN__
++	Q2_WearableUpdateEnemyAssist(ent, ucmd);
++
 +	if (Q2_WearableShouldAutoFire(ent))
 +	{
 +		ucmd->buttons |= BUTTON_ATTACK;
@@ -257,7 +413,7 @@ index 4f37cbb..24d0f4f 100644
  	if (ent->client->chase_target)
  	{
  		client->resp.cmd_angles[0] = SHORT2ANGLE(ucmd->angles[0]);
-@@ -2371,6 +2430,11 @@ ClientBeginServerFrame(edict_t *ent)
+@@ -2371,6 +2536,11 @@ ClientBeginServerFrame(edict_t *ent)
  		/* wait for any button just going down */
  		if (level.time > client->respawn_time)
  		{
@@ -269,7 +425,7 @@ index 4f37cbb..24d0f4f 100644
  			/* in deathmatch, only wait for attack button */
  			if (deathmatch->value)
  			{
-@@ -2387,6 +2451,7 @@ ClientBeginServerFrame(edict_t *ent)
+@@ -2387,6 +2557,7 @@ ClientBeginServerFrame(edict_t *ent)
  				respawn(ent);
  				client->latched_buttons = 0;
  			}

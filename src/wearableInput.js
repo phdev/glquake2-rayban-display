@@ -19,7 +19,9 @@ export function createWearableInput({
   onForwardChange,
   onActionChange,
   onRecenter,
-  onTurnBurst
+  onTurnBurst,
+  hasEnemySide,
+  onEnemyTurnRequest
 }) {
   let lastUpGesture = 0;
 
@@ -91,13 +93,30 @@ export function createWearableInput({
     }
 
     if (gesture === "swipeLeft") {
+      if (turnToEnemySide("left", -1)) {
+        return;
+      }
+
       onTurnBurst?.(1);
       return;
     }
 
     if (gesture === "swipeRight") {
+      if (turnToEnemySide("right", 1)) {
+        return;
+      }
+
       onTurnBurst?.(-1);
     }
+  }
+
+  function turnToEnemySide(side, direction) {
+    if (!hasEnemySide?.(side)) {
+      return false;
+    }
+
+    onEnemyTurnRequest?.(direction);
+    return true;
   }
 
   function setAction(action, down) {

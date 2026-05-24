@@ -47,6 +47,65 @@ body {
   image-rendering: auto;
 }
 
+.render-status {
+  position: fixed;
+  left: 8px;
+  top: 8px;
+  z-index: 1;
+  min-width: 54px;
+  min-height: 24px;
+  border: 1px solid rgba(143, 140, 130, 0.58);
+  border-radius: 6px;
+  padding: 5px 8px 4px;
+  background: rgba(5, 5, 5, 0.62);
+  color: #d7d1c4;
+  font-size: 0.66rem;
+  line-height: 1;
+  text-align: center;
+  pointer-events: none;
+}
+
+.render-status[data-mode="gpu"] {
+  border-color: rgba(86, 196, 126, 0.72);
+  color: #7ce29d;
+}
+
+.render-status[data-mode="software"] {
+  border-color: rgba(242, 162, 58, 0.72);
+  color: #f2a23a;
+}
+
+.enemy-indicator {
+  position: fixed;
+  top: 50%;
+  z-index: 1;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  pointer-events: none;
+  filter: drop-shadow(0 0 10px rgba(238, 67, 76, 0.5));
+  transform: translateY(-50%);
+  transition: opacity 90ms linear;
+}
+
+.enemy-indicator.is-visible {
+  opacity: 0.94;
+}
+
+.enemy-indicator-left {
+  left: 10px;
+  border-top: 18px solid transparent;
+  border-bottom: 18px solid transparent;
+  border-right: 24px solid #ee434c;
+}
+
+.enemy-indicator-right {
+  right: 10px;
+  border-top: 18px solid transparent;
+  border-bottom: 18px solid transparent;
+  border-left: 24px solid #ee434c;
+}
+
 .loading-panel {
   position: absolute;
   inset: 0;
