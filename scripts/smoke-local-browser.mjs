@@ -47,9 +47,7 @@ try {
   await waitForAppReady(client);
 
   console.log(`Loaded ${APP_URL}`);
-  await evaluate(client, "document.querySelector('#startButton')?.click(); true", {
-    userGesture: true
-  });
+  await assertAutoStartEnabled(client);
 
   const terminal = await waitForBootSuccess(client);
   const webgl = await evaluate(
@@ -181,6 +179,20 @@ async function waitForAppReady(client) {
   await waitFor(async () => {
     return evaluate(client, "Boolean(document.querySelector('#consoleOutput'))");
   }, "app terminal");
+}
+
+async function assertAutoStartEnabled(client) {
+  const state = await evaluate(
+    client,
+    `({
+      autoStart: Boolean(window.__q2AutoStart),
+      hasStartButton: Boolean(document.querySelector('#startButton'))
+    })`
+  );
+
+  if (!state?.autoStart || state?.hasStartButton) {
+    throw new Error("App is not configured for click-free auto-start");
+  }
 }
 
 async function waitForBootSuccess(client) {

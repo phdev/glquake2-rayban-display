@@ -38,8 +38,12 @@ refs.canvas.width = runtimeConfig.width;
 refs.canvas.height = runtimeConfig.height;
 refs.canvas.style.aspectRatio = `${runtimeConfig.width} / ${runtimeConfig.height}`;
 refs.consoleToggleButton.addEventListener("click", toggleConsole);
+refs.canvas.focus({ preventScroll: true });
 
-start();
+window.__q2AutoStart = true;
+queueMicrotask(() => {
+  start();
+});
 
 async function start() {
   if (booting || engine) {
