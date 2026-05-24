@@ -14,6 +14,9 @@ REDUCED_PAK="$BUILD_DIR/baseq2-demo1.pak"
 LICENSE_PATH="$EXTRACTED/Install/Data/DOCS/license.txt"
 Q2_DEMO_REDUCE="${Q2_DEMO_REDUCE:-yes}"
 Q2_DEMO_MAP="${Q2_DEMO_MAP:-maps/demo1.bsp}"
+Q2_DEMO_AUDIO_RATE="${Q2_DEMO_AUDIO_RATE:-10000}"
+Q2_DEMO_AUDIO_WIDTH="${Q2_DEMO_AUDIO_WIDTH:-1}"
+Q2_DEMO_WRITE_GZIP="${Q2_DEMO_WRITE_GZIP:-yes}"
 
 md5_file() {
   if command -v md5sum >/dev/null 2>&1; then
@@ -45,13 +48,20 @@ if [[ "$ACTUAL_PAK_MD5" != "$PAK_MD5" ]]; then
 fi
 
 if [[ "$Q2_DEMO_REDUCE" == "yes" ]]; then
-  python3 "$ROOT_DIR/scripts/reduce-q2-map-pak.py" \
-    --input "$PAK_PATH" \
-    --map "$Q2_DEMO_MAP" \
-    --output "$REDUCED_PAK"
+  REDUCE_ARGS=(--input "$PAK_PATH" --map "$Q2_DEMO_MAP" --output "$REDUCED_PAK")
+
+  if [[ "$Q2_DEMO_AUDIO_RATE" != "0" ]]; then
+    REDUCE_ARGS+=(--audio-rate "$Q2_DEMO_AUDIO_RATE" --audio-width "$Q2_DEMO_AUDIO_WIDTH")
+  fi
+
+  python3 "$ROOT_DIR/scripts/reduce-q2-map-pak.py" "${REDUCE_ARGS[@]}"
   install -m 0644 "$REDUCED_PAK" "$PUBLIC_BASEQ2/pak0.pak"
 else
   install -m 0644 "$PAK_PATH" "$PUBLIC_BASEQ2/pak0.pak"
+fi
+
+if [[ "$Q2_DEMO_WRITE_GZIP" == "yes" ]]; then
+  gzip -c -9 "$PUBLIC_BASEQ2/pak0.pak" > "$PUBLIC_BASEQ2/pak0.pak.gz"
 fi
 
 install -m 0644 "$LICENSE_PATH" "$PUBLIC_BASEQ2/license.txt"

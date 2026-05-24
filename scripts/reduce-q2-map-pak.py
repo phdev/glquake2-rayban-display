@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 import argparse
+import array
 import fnmatch
+import io
 import re
 import struct
 import sys
+import wave
 from collections import Counter
 from pathlib import Path
 
@@ -105,6 +108,71 @@ def format_size(size):
         if size < 1024 or unit == "GiB":
             return f"{size:.1f} {unit}" if unit != "B" else f"{size} {unit}"
         size /= 1024
+
+
+def read_wav_samples(payload):
+    with wave.open(io.BytesIO(payload), "rb") as wav:
+        channels = wav.getnchannels()
+        sample_width = wav.getsampwidth()
+        sample_rate = wav.getframerate()
+        frames = wav.readframes(wav.getnframes())
+
+    if channels != 1 or sample_width != 2:
+        raise PakError("Only mono 16-bit PCM WAV conversion is supported")
+
+    samples = array.array("h")
+    samples.frombytes(frames)
+    if sys.byteorder != "little":
+        samples.byteswap()
+
+    return sample_rate, samples
+
+
+def resample_linear(samples, source_rate, target_rate):
+    if source_rate == target_rate:
+        return samples
+
+    output_len = max(1, int(round(len(samples) * target_rate / source_rate)))
+    output = array.array("h")
+    scale = source_rate / target_rate
+    max_index = len(samples) - 1
+
+    for index in range(output_len):
+        position = index * scale
+        left = int(position)
+        if left >= max_index:
+            output.append(samples[max_index])
+            continue
+
+        fraction = position - left
+        value = int(samples[left] * (1 - fraction) + samples[left + 1] * fraction)
+        output.append(max(-32768, min(32767, value)))
+
+    return output
+
+
+def convert_wav(payload, target_rate, target_width):
+    source_rate, samples = read_wav_samples(payload)
+    samples = resample_linear(samples, source_rate, target_rate)
+
+    output = io.BytesIO()
+    with wave.open(output, "wb") as wav:
+        wav.setnchannels(1)
+        wav.setframerate(target_rate)
+
+        if target_width == 1:
+            wav.setsampwidth(1)
+            wav.writeframes(bytes(max(0, min(255, (sample + 32768) >> 8)) for sample in samples))
+        elif target_width == 2:
+            wav.setsampwidth(2)
+            if sys.byteorder != "little":
+                samples = samples[:]
+                samples.byteswap()
+            wav.writeframes(samples.tobytes())
+        else:
+            raise PakError("Audio sample width must be 1 or 2 bytes")
+
+    return output.getvalue()
 
 
 def q2_unescape(value):
@@ -265,7 +333,14 @@ def map_asset_set(source, map_path, extra_globs):
 def reduce_map_pak(args):
     source = read_pak(args.input)
     kept, entities, textures, class_counts = map_asset_set(source, args.map, args.extra_glob)
-    output_files = {name: source[name] for name in sorted(kept)}
+    output_files = {}
+
+    for name in sorted(kept):
+        payload = source[name]
+        if args.audio_rate and name.startswith("sound/") and name.endswith(".wav"):
+            payload = convert_wav(payload, args.audio_rate, args.audio_width)
+        output_files[name] = payload
+
     write_pak(args.output, output_files)
 
     source_size = sum(len(payload) for payload in source.values())
@@ -278,6 +353,8 @@ def reduce_map_pak(args):
     print(f"Sky: {sky}")
     print(f"Entities: {len(entities)} entities, {len(class_counts)} class names")
     print(f"Textures: {len(textures)} BSP texture references")
+    if args.audio_rate:
+        print(f"Audio: converted retained WAVs to {args.audio_rate}Hz {args.audio_width * 8}-bit mono")
     print(f"Source: {len(source)} files, {format_size(source_size)}")
     print(f"Reduced: {len(output_files)} files, {format_size(output_size)}")
     print(f"Wrote: {args.output}")
@@ -295,6 +372,19 @@ def main():
         action="append",
         default=[],
         help="Additional PAK glob to keep; can be provided more than once",
+    )
+    parser.add_argument(
+        "--audio-rate",
+        type=int,
+        default=0,
+        help="Convert retained WAVs to this sample rate; 0 keeps original audio",
+    )
+    parser.add_argument(
+        "--audio-width",
+        type=int,
+        choices=(1, 2),
+        default=1,
+        help="Converted WAV sample width in bytes",
     )
 
     args = parser.parse_args()

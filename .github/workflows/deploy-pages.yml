@@ -35,8 +35,6 @@ jobs:
       - name: Install Quake II demo data
         run: npm run install:demo-pak
       - name: Build GLQuake II engine
-        env:
-          Q2_REDUCED_PAK: ${{ github.workspace }}/public/wasm/baseq2/pak0.pak
         run: |
           source .build/emsdk/emsdk_env.sh
           npm run build:gl4es

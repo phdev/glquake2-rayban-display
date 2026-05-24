@@ -68,7 +68,7 @@ SDL is the open-source Simple DirectMedia Layer. In this build it handles browse
 
 ## Game Data
 
-Quake II data is not committed to this repository. The Pages workflow downloads the Quake II 3.14 demo package from the Yamagi mirror, verifies the package and `baseq2/pak0.pak`, reduces it to the first demo map, embeds that reduced PAK in the Emscripten data package, then publishes the reduced demo PAK and its accompanying license text as generated Pages artifacts. The app uses that embedded demo PAK when no user PAK has been imported.
+Quake II data is not committed to this repository. The Pages workflow downloads the Quake II 3.14 demo package from the Yamagi mirror, verifies the package and `baseq2/pak0.pak`, reduces it to the first demo map, converts the retained first-level WAV audio to lower-rate PCM, then publishes both `pak0.pak` and `pak0.pak.gz` with the accompanying license text as generated Pages artifacts. The app loads and decompresses the gzipped demo PAK before Quake II starts when no user PAK has been imported.
 
 You can still use your own legally usable `baseq2/pak0.pak`. A manually imported PAK takes precedence over the bundled demo PAK.
 
@@ -80,7 +80,13 @@ The included first-map reducer parses the target BSP, keeps its referenced textu
 npm run reduce:first-map
 ```
 
-The Pages workflow uses the same reducer through `npm run install:demo-pak`. The default target is `maps/demo1.bsp`; override it with `Q2_DEMO_MAP=maps/demo2.bsp` for local experiments. Set `Q2_DEMO_REDUCE=no` to publish the verified full demo PAK instead.
+The wearable reduction keeps first-level weapons, enemies, pickups, decorative map entities, sprite effects, and audio. It preserves audio content by converting retained WAVs to 10 kHz 8-bit mono PCM, then relies on gzip transfer compression:
+
+```bash
+npm run reduce:first-map:wearable
+```
+
+The Pages workflow uses the same reducer through `npm run install:demo-pak`. The default target is `maps/demo1.bsp`; override it with `Q2_DEMO_MAP=maps/demo2.bsp` for local experiments. Set `Q2_DEMO_AUDIO_RATE=0` to keep original WAV quality, or `Q2_DEMO_REDUCE=no` to publish the verified full demo PAK instead.
 
 Quake II asset dependencies are connected. Do a dependency pass first: launch the target map with a full local data set, capture loaded and missing asset paths from the engine log, then reduce only files that are not referenced. Restore required files or add tiny valid placeholders when missing sounds create repeated log noise.
 
@@ -90,7 +96,7 @@ Example reduction command:
 python3 scripts/paktool.py reduce scripts/reduced-pak.example.json
 ```
 
-The hosted app lets you import a reduced PAK into browser storage. The patched Qwasm2 filesystem bridge installs that package at startup; if there is no imported PAK, it installs the bundled demo PAK instead.
+The hosted app lets you import a reduced PAK into browser storage. The patched Qwasm2 filesystem bridge installs that package at startup; if there is no imported PAK, it installs the bundled demo PAK before the engine starts.
 
 ## Game-Module Changes
 

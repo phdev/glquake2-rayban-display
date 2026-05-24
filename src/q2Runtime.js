@@ -3,6 +3,7 @@ import { readPakBytes } from "./storage.js";
 const ENGINE_BASE = `${import.meta.env.BASE_URL}wasm/`;
 const BUNDLED_PAK_PATH = "baseq2/pak0.pak";
 const BUNDLED_PAK_URL = `${ENGINE_BASE}${BUNDLED_PAK_PATH}`;
+const BUNDLED_PAK_GZIP_URL = `${BUNDLED_PAK_URL}.gz`;
 const REQUIRED_ENGINE_FILES = [
   "quake2.js",
   "quake2.wasm",
@@ -66,6 +67,19 @@ export async function probeEngineArtifacts() {
 
 export async function probeBundledPak() {
   try {
+    const gzipResponse = await fetch(BUNDLED_PAK_GZIP_URL, {
+      method: "HEAD",
+      cache: "no-store"
+    });
+
+    if (gzipResponse.ok) {
+      return {
+        name: "Compressed Quake II demo pak0.pak",
+        size: Number(gzipResponse.headers.get("content-length") || 0),
+        url: BUNDLED_PAK_GZIP_URL
+      };
+    }
+
     const response = await fetch(BUNDLED_PAK_URL, {
       method: "HEAD",
       cache: "no-store"
@@ -157,6 +171,9 @@ function createModule({ canvas, output, status, config, onStatus, onLog }) {
     },
     captureMouse() {},
     q2InstallPendingData: (FS) => installPakData(FS, onStatus),
+    preRun: [
+      (runtimeModule) => installPakBeforeMain(runtimeModule, onStatus)
+    ],
     totalDependencies: 0,
     monitorRunDependencies(left) {
       this.totalDependencies = Math.max(this.totalDependencies, left);
@@ -191,12 +208,28 @@ function buildArguments(config) {
   return args;
 }
 
-async function installPakData(FS, onStatus) {
+function installPakBeforeMain(module, onStatus) {
+  if (!module?.FS || typeof module.addRunDependency !== "function") {
+    return;
+  }
+
+  module.addRunDependency("q2-pak");
+  installPakData(module.FS, onStatus, { writablePath: false })
+    .catch((error) => {
+      console.warn(`Failed to install startup PAK: ${error}`);
+      onStatus?.("PAK install failed");
+    })
+    .finally(() => {
+      module.removeRunDependency("q2-pak");
+    });
+}
+
+async function installPakData(FS, onStatus, options = { writablePath: true }) {
   const storedBytes = await readPakBytes();
 
   if (storedBytes) {
     onStatus?.("Installing imported PAK...");
-    writePak(FS, storedBytes, "imported");
+    writePak(FS, storedBytes, "imported", options);
     return;
   }
 
@@ -208,28 +241,55 @@ async function installPakData(FS, onStatus) {
 
   const bundledBytes = await readBundledPakBytes(onStatus);
   if (bundledBytes) {
-    writePak(FS, bundledBytes, "bundled");
+    writePak(FS, bundledBytes, "bundled", options);
   }
 }
 
 async function readBundledPakBytes(onStatus) {
-  onStatus?.("Loading bundled demo PAK...");
-  const response = await fetch(BUNDLED_PAK_URL, { cache: "force-cache" });
+  if ("DecompressionStream" in globalThis) {
+    onStatus?.("Loading compressed demo PAK...");
+    const compressed = await fetchBytes(BUNDLED_PAK_GZIP_URL);
+    if (compressed) {
+      onStatus?.("Decompressing demo PAK...");
+      return decompressGzip(compressed);
+    }
+  }
+
+  onStatus?.("Loading demo PAK...");
+  const bytes = await fetchBytes(BUNDLED_PAK_URL);
+  if (!bytes) {
+    onStatus?.("No PAK available");
+  }
+
+  return bytes;
+}
+
+async function fetchBytes(url) {
+  const response = await fetch(url, { cache: "force-cache" });
 
   if (!response.ok) {
-    onStatus?.("No PAK available");
     return null;
   }
 
   return new Uint8Array(await response.arrayBuffer());
 }
 
-function writePak(FS, pakBytes, source) {
+async function decompressGzip(bytes) {
+  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+function writePak(FS, pakBytes, source, options) {
   mkdirTree(FS, "/baseq2");
-  mkdirTree(FS, "/qwasm2/baseq2");
   FS.writeFile("/baseq2/pak0.pak", pakBytes);
-  FS.writeFile("/qwasm2/baseq2/pak0.pak", pakBytes);
-  console.info(`Installed ${source} PAK at /baseq2/pak0.pak and /qwasm2/baseq2/pak0.pak`);
+
+  if (options.writablePath) {
+    mkdirTree(FS, "/qwasm2/baseq2");
+    FS.writeFile("/qwasm2/baseq2/pak0.pak", pakBytes);
+    console.info(`Installed ${source} PAK at /baseq2/pak0.pak and /qwasm2/baseq2/pak0.pak`);
+  } else {
+    console.info(`Installed ${source} PAK at /baseq2/pak0.pak`);
+  }
 }
 
 function fileExists(FS, path) {
