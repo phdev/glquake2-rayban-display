@@ -27,6 +27,7 @@ const IGNORED_CHROME_STDERR = [
 
 const processes = [];
 let userDataDir = null;
+let client = null;
 
 try {
   if (!existsSync(CHROME_BIN)) {
@@ -38,7 +39,7 @@ try {
   await startChrome(userDataDir);
 
   const target = await openTarget(APP_URL);
-  const client = await connectCdp(target.webSocketDebuggerUrl);
+  client = await connectCdp(target.webSocketDebuggerUrl);
 
   await client.send("Runtime.enable");
   await client.send("Page.enable");
@@ -46,7 +47,7 @@ try {
   await waitForAppReady(client);
 
   console.log(`Loaded ${APP_URL}`);
-  await evaluate(client, "document.querySelector('#startButton').click(); true", {
+  await evaluate(client, "document.querySelector('#startButton')?.click(); true", {
     userGesture: true
   });
 
@@ -73,8 +74,11 @@ try {
     console.log(`WebGL context: ${webgl.width}x${webgl.height} ${webgl.vendor} / ${webgl.renderer}`);
   }
 } finally {
+  client?.close();
   await cleanup();
 }
+
+process.exit(0);
 
 async function startPreviewServer() {
   const viteBin = join(ROOT, "node_modules", ".bin", "vite");
@@ -166,14 +170,17 @@ async function connectCdp(webSocketDebuggerUrl) {
       return new Promise((resolve, reject) => {
         callbacks.set(id, { resolve, reject });
       });
+    },
+    close() {
+      ws.close();
     }
   };
 }
 
 async function waitForAppReady(client) {
   await waitFor(async () => {
-    return evaluate(client, "Boolean(document.querySelector('#startButton'))");
-  }, "app start button");
+    return evaluate(client, "Boolean(document.querySelector('#consoleOutput'))");
+  }, "app terminal");
 }
 
 async function waitForBootSuccess(client) {
