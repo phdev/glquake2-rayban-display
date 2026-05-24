@@ -10,7 +10,10 @@ PUBLIC_BASEQ2="$ROOT_DIR/public/wasm/baseq2"
 DEMO_EXE="$BUILD_DIR/q2-314-demo-x86.exe"
 EXTRACTED="$BUILD_DIR/extracted"
 PAK_PATH="$EXTRACTED/Install/Data/baseq2/pak0.pak"
+REDUCED_PAK="$BUILD_DIR/baseq2-demo1.pak"
 LICENSE_PATH="$EXTRACTED/Install/Data/DOCS/license.txt"
+Q2_DEMO_REDUCE="${Q2_DEMO_REDUCE:-yes}"
+Q2_DEMO_MAP="${Q2_DEMO_MAP:-maps/demo1.bsp}"
 
 md5_file() {
   if command -v md5sum >/dev/null 2>&1; then
@@ -41,7 +44,16 @@ if [[ "$ACTUAL_PAK_MD5" != "$PAK_MD5" ]]; then
   exit 1
 fi
 
-install -m 0644 "$PAK_PATH" "$PUBLIC_BASEQ2/pak0.pak"
+if [[ "$Q2_DEMO_REDUCE" == "yes" ]]; then
+  python3 "$ROOT_DIR/scripts/reduce-q2-map-pak.py" \
+    --input "$PAK_PATH" \
+    --map "$Q2_DEMO_MAP" \
+    --output "$REDUCED_PAK"
+  install -m 0644 "$REDUCED_PAK" "$PUBLIC_BASEQ2/pak0.pak"
+else
+  install -m 0644 "$PAK_PATH" "$PUBLIC_BASEQ2/pak0.pak"
+fi
+
 install -m 0644 "$LICENSE_PATH" "$PUBLIC_BASEQ2/license.txt"
 
 echo "Installed Quake II demo PAK into $PUBLIC_BASEQ2"

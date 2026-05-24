@@ -11,7 +11,8 @@
     "check": "npm run build && python3 scripts/paktool.py --self-test",
     "build:gl4es": "bash scripts/build-gl4es.sh",
     "build:qwasm2": "bash scripts/build-qwasm2.sh",
-    "install:demo-pak": "bash scripts/install-demo-pak.sh"
+    "install:demo-pak": "bash scripts/install-demo-pak.sh",
+    "reduce:first-map": "python3 scripts/reduce-q2-map-pak.py --input dist-pak/baseq2/pak0.pak --map maps/demo1.bsp --output dist-pak/baseq2/pak0-demo1.pak"
   },
   "devDependencies": {
     "vite": "^8.0.14"

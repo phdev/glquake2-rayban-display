@@ -68,11 +68,19 @@ SDL is the open-source Simple DirectMedia Layer. In this build it handles browse
 
 ## Game Data
 
-Quake II data is not committed to this repository. The Pages workflow downloads the Quake II 3.14 demo package from the Yamagi mirror, verifies the package and `baseq2/pak0.pak`, then publishes the demo PAK and its accompanying license text as generated Pages artifacts. The app auto-loads that demo PAK when no user PAK has been imported.
+Quake II data is not committed to this repository. The Pages workflow downloads the Quake II 3.14 demo package from the Yamagi mirror, verifies the package and `baseq2/pak0.pak`, reduces it to the first demo map, then publishes the reduced demo PAK and its accompanying license text as generated Pages artifacts. The app auto-loads that reduced demo PAK when no user PAK has been imported.
 
 You can still use your own legally usable `baseq2/pak0.pak`. A manually imported PAK takes precedence over the bundled demo PAK.
 
 For a wearable build, create a reduced single-level package. Keep one playable map, required textures, required models and animations, HUD/status assets, one default weapon, and a minimal sound set. Remove unused maps, enemies, weapons, cinematics, music, multiplayer extras, and demos.
+
+The included first-map reducer parses the target BSP, keeps its referenced textures, skybox, and speaker sounds, then adds the class-based Quake II assets needed by the monsters, items, weapons, effects, HUD, and player sounds used by that map:
+
+```bash
+npm run reduce:first-map
+```
+
+The Pages workflow uses the same reducer through `npm run install:demo-pak`. The default target is `maps/demo1.bsp`; override it with `Q2_DEMO_MAP=maps/demo2.bsp` for local experiments. Set `Q2_DEMO_REDUCE=no` to publish the verified full demo PAK instead.
 
 Quake II asset dependencies are connected. Do a dependency pass first: launch the target map with a full local data set, capture loaded and missing asset paths from the engine log, then reduce only files that are not referenced. Restore required files or add tiny valid placeholders when missing sounds create repeated log noise.
 
