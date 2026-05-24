@@ -1,6 +1,11 @@
 import "./styles.css";
 import { createHeadTracking } from "./headTracking.js";
-import { createRuntimeConfig, bootQuake2, probeEngineArtifacts } from "./q2Runtime.js";
+import {
+  createRuntimeConfig,
+  bootQuake2,
+  probeBundledPak,
+  probeEngineArtifacts
+} from "./q2Runtime.js";
 import { createWearableInput } from "./wearableInput.js";
 import { clearPakFile, formatBytes, getPakInfo, savePakFile } from "./storage.js";
 
@@ -47,7 +52,7 @@ app.innerHTML = `
         </div>
         <div>
           <span class="eyebrow">Data</span>
-          <p id="pakStatus">No PAK imported</p>
+          <p id="pakStatus">Checking PAK...</p>
         </div>
         <div>
           <span class="eyebrow">IMU</span>
@@ -204,9 +209,15 @@ async function clearPak() {
 
 async function refreshPakStatus() {
   const pak = await getPakInfo();
-  refs.pakStatus.textContent = pak
-    ? `${pak.name} ${formatBytes(pak.size)}`
-    : "No PAK imported";
+  if (pak) {
+    refs.pakStatus.textContent = `${pak.name} ${formatBytes(pak.size)}`;
+    return;
+  }
+
+  const bundledPak = await probeBundledPak();
+  refs.pakStatus.textContent = bundledPak
+    ? `Auto demo PAK ${formatBytes(bundledPak.size)}`
+    : "No PAK available";
 }
 
 async function refreshEngineStatus() {

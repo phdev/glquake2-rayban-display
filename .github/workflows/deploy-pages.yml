@@ -37,6 +37,8 @@ jobs:
           source .build/emsdk/emsdk_env.sh
           npm run build:gl4es
           GL4ES_PATH="$PWD/.build/gl4es" npm run build:qwasm2
+      - name: Install Quake II demo data
+        run: npm run install:demo-pak
       - run: npm run build
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

@@ -10,7 +10,8 @@
     "preview": "vite preview --host 0.0.0.0",
     "check": "npm run build && python3 scripts/paktool.py --self-test",
     "build:gl4es": "bash scripts/build-gl4es.sh",
-    "build:qwasm2": "bash scripts/build-qwasm2.sh"
+    "build:qwasm2": "bash scripts/build-qwasm2.sh",
+    "install:demo-pak": "bash scripts/install-demo-pak.sh"
   },
   "devDependencies": {
     "vite": "^8.0.14"

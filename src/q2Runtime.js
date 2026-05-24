@@ -1,6 +1,8 @@
 import { readPakBytes } from "./storage.js";
 
 const ENGINE_BASE = `${import.meta.env.BASE_URL}wasm/`;
+const BUNDLED_PAK_PATH = "baseq2/pak0.pak";
+const BUNDLED_PAK_URL = `${ENGINE_BASE}${BUNDLED_PAK_PATH}`;
 const REQUIRED_ENGINE_FILES = [
   "quake2.js",
   "quake2.wasm",
@@ -60,6 +62,27 @@ export async function probeEngineArtifacts() {
   return checks
     .filter(([, ok]) => !ok)
     .map(([file]) => file);
+}
+
+export async function probeBundledPak() {
+  try {
+    const response = await fetch(BUNDLED_PAK_URL, {
+      method: "HEAD",
+      cache: "no-store"
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    return {
+      name: "Quake II demo pak0.pak",
+      size: Number(response.headers.get("content-length") || 0),
+      url: BUNDLED_PAK_URL
+    };
+  } catch {
+    return null;
+  }
 }
 
 export async function bootQuake2({
@@ -133,7 +156,7 @@ function createModule({ canvas, output, status, config, onStatus, onLog }) {
       canvas.style.filter = gamma < 0 ? "" : `brightness(${gamma * 2})`;
     },
     captureMouse() {},
-    q2InstallPendingData: installStoredPak,
+    q2InstallPendingData: (FS) => installPakData(FS, onStatus),
     totalDependencies: 0,
     monitorRunDependencies(left) {
       this.totalDependencies = Math.max(this.totalDependencies, left);
@@ -168,13 +191,34 @@ function buildArguments(config) {
   return args;
 }
 
-async function installStoredPak(FS) {
-  const pakBytes = await readPakBytes();
+async function installPakData(FS, onStatus) {
+  const storedBytes = await readPakBytes();
 
-  if (!pakBytes) {
+  if (storedBytes) {
+    onStatus?.("Installing imported PAK...");
+    writePak(FS, storedBytes);
     return;
   }
 
+  const bundledBytes = await readBundledPakBytes(onStatus);
+  if (bundledBytes) {
+    writePak(FS, bundledBytes);
+  }
+}
+
+async function readBundledPakBytes(onStatus) {
+  onStatus?.("Loading bundled demo PAK...");
+  const response = await fetch(BUNDLED_PAK_URL, { cache: "force-cache" });
+
+  if (!response.ok) {
+    onStatus?.("No PAK available");
+    return null;
+  }
+
+  return new Uint8Array(await response.arrayBuffer());
+}
+
+function writePak(FS, pakBytes) {
   mkdirTree(FS, "/qwasm2/baseq2");
   FS.writeFile("/qwasm2/baseq2/pak0.pak", pakBytes);
 }

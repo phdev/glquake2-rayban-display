@@ -22,6 +22,7 @@ var glassesDetected =
 - IMU yaw joystick model with a 50ms tick, 7.5 degree deadzone, and 30 degree max angle.
 - Yaw meter overlay with grey, orange, and blue states.
 - Qwasm2 patch for direct `Q2_AddViewAngles`, wearable action state, C game-module auto-fire, and 3 second auto-respawn.
+- Automatic fallback to the Quake II demo PAK when no user PAK is imported.
 - PAK read/write/reduction helper with silent WAV stub generation.
 - GitHub Pages workflow.
 
@@ -67,7 +68,9 @@ SDL is the open-source Simple DirectMedia Layer. In this build it handles browse
 
 ## Game Data
 
-Quake II data is not committed or published from this repository. Use your own legally usable `baseq2/pak0.pak`.
+Quake II data is not committed to this repository. The Pages workflow downloads the Quake II 3.14 demo package from the Yamagi mirror, verifies the package and `baseq2/pak0.pak`, then publishes the demo PAK and its accompanying license text as generated Pages artifacts. The app auto-loads that demo PAK when no user PAK has been imported.
+
+You can still use your own legally usable `baseq2/pak0.pak`. A manually imported PAK takes precedence over the bundled demo PAK.
 
 For a wearable build, create a reduced single-level package. Keep one playable map, required textures, required models and animations, HUD/status assets, one default weapon, and a minimal sound set. Remove unused maps, enemies, weapons, cinematics, music, multiplayer extras, and demos.
 
@@ -79,7 +82,7 @@ Example reduction command:
 python3 scripts/paktool.py reduce scripts/reduced-pak.example.json
 ```
 
-The hosted app lets you import a reduced PAK into browser storage. The patched Qwasm2 filesystem bridge installs that package at startup.
+The hosted app lets you import a reduced PAK into browser storage. The patched Qwasm2 filesystem bridge installs that package at startup; if there is no imported PAK, it installs the bundled demo PAK instead.
 
 ## Game-Module Changes
 
@@ -121,4 +124,4 @@ npm run check
 
 ## GitHub Pages
 
-The included workflow installs Emscripten, builds GL4ES, builds the patched Qwasm2 engine, then deploys `dist/` on pushes to `main`. The public page can host the shell and open-source engine artifacts. Keep game data out of public git history unless you have explicit rights to redistribute it.
+The included workflow installs Emscripten, builds GL4ES, builds the patched Qwasm2 engine, installs the verified demo PAK, then deploys `dist/` on pushes to `main`. The public page hosts the shell, open-source engine artifacts, and the free electronically distributable demo data with its license.
