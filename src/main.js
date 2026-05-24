@@ -12,12 +12,15 @@ let headTracking = null;
 let wearableInput = null;
 
 app.innerHTML = `
-  <main class="terminal-shell" aria-label="GLQuake II terminal">
-    <canvas id="gameCanvas" class="runtime-canvas" tabindex="-1" aria-hidden="true"></canvas>
+  <main class="game-shell" aria-label="GLQuake II runtime">
+    <canvas id="gameCanvas" class="game-canvas" tabindex="-1"></canvas>
     <div id="yawMeter" class="runtime-hidden" data-zone="deadzone" aria-hidden="true"></div>
     <span id="statusText" class="runtime-hidden" aria-hidden="true"></span>
     <span id="imuStatus" class="runtime-hidden" aria-hidden="true"></span>
-    <textarea id="consoleOutput" class="terminal-output" readonly spellcheck="false" aria-label="Terminal"></textarea>
+    <button id="consoleToggleButton" class="console-toggle" type="button" aria-expanded="false">Console</button>
+    <section id="consolePanel" class="console-panel" hidden>
+      <textarea id="consoleOutput" class="terminal-output" readonly spellcheck="false" aria-label="Terminal"></textarea>
+    </section>
   </main>
 `;
 
@@ -26,13 +29,15 @@ const refs = {
   yawMeter: document.querySelector("#yawMeter"),
   statusText: document.querySelector("#statusText"),
   imuStatus: document.querySelector("#imuStatus"),
+  consolePanel: document.querySelector("#consolePanel"),
+  consoleToggleButton: document.querySelector("#consoleToggleButton"),
   consoleOutput: document.querySelector("#consoleOutput")
 };
 
 refs.canvas.width = runtimeConfig.width;
 refs.canvas.height = runtimeConfig.height;
 refs.canvas.style.aspectRatio = `${runtimeConfig.width} / ${runtimeConfig.height}`;
-refs.consoleOutput.focus();
+refs.consoleToggleButton.addEventListener("click", toggleConsole);
 
 start();
 
@@ -77,6 +82,7 @@ async function start() {
   } catch (error) {
     refs.statusText.textContent = error.message || String(error);
     appendTerminal(`[app] ${refs.statusText.textContent}`);
+    setConsoleVisible(true);
   } finally {
     booting = false;
   }
@@ -95,4 +101,21 @@ async function startHeadTracking() {
 function appendTerminal(text) {
   refs.consoleOutput.value += `${text}\n`;
   refs.consoleOutput.scrollTop = refs.consoleOutput.scrollHeight;
+}
+
+function toggleConsole() {
+  setConsoleVisible(refs.consolePanel.hidden);
+}
+
+function setConsoleVisible(visible) {
+  refs.consolePanel.hidden = !visible;
+  refs.consoleToggleButton.textContent = visible ? "Hide" : "Console";
+  refs.consoleToggleButton.setAttribute("aria-expanded", String(visible));
+
+  if (visible) {
+    refs.consoleOutput.scrollTop = refs.consoleOutput.scrollHeight;
+    refs.consoleOutput.focus();
+  } else {
+    refs.canvas.focus();
+  }
 }

@@ -30,7 +30,7 @@ export function createRuntimeConfig() {
 
   return glassesDetected
     ? {
-        width: 800,
+        width: 600,
         height: 600,
         inputMode: "wearable",
         lowLatencyControls: true,
