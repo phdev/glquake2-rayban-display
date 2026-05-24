@@ -2,6 +2,7 @@ const DB_NAME = "glquake2-display";
 const DB_VERSION = 1;
 const STORE_NAME = "packages";
 const PAK_KEY = "baseq2/pak0.pak";
+const LEGACY_BLOB_TIMEOUT_MS = 60000;
 
 function openDatabase() {
   return new Promise((resolve, reject) => {
@@ -36,17 +37,18 @@ function withStore(mode, callback) {
 }
 
 export async function savePakFile(file) {
+  const bytes = await file.arrayBuffer();
   const record = {
     key: PAK_KEY,
     name: file.name,
     size: file.size,
     type: file.type || "application/octet-stream",
     updatedAt: new Date().toISOString(),
-    blob: file
+    bytes
   };
 
   await withStore("readwrite", (store) => store.put(record));
-  return record;
+  return getRecordInfo(record);
 }
 
 export async function getPakInfo() {
@@ -64,11 +66,26 @@ export async function getPakInfo() {
 
 export async function readPakBytes() {
   const record = await withStore("readonly", (store) => store.get(PAK_KEY));
-  if (!record?.blob) {
+
+  if (!record) {
     return null;
   }
 
-  return new Uint8Array(await record.blob.arrayBuffer());
+  const bytes = toUint8Array(record.bytes);
+  if (bytes) {
+    return bytes;
+  }
+
+  if (record.blob) {
+    const buffer = await withTimeout(
+      record.blob.arrayBuffer(),
+      LEGACY_BLOB_TIMEOUT_MS,
+      "Legacy imported PAK read timed out. Clear and re-import the PAK."
+    );
+    return new Uint8Array(buffer);
+  }
+
+  return null;
 }
 
 export async function clearPakFile() {
@@ -90,4 +107,44 @@ export function formatBytes(value) {
   }
 
   return `${amount.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
+}
+
+function getRecordInfo(record) {
+  return {
+    name: record.name,
+    size: record.size,
+    updatedAt: record.updatedAt
+  };
+}
+
+function toUint8Array(value) {
+  if (!value) {
+    return null;
+  }
+
+  if (value instanceof Uint8Array) {
+    return value;
+  }
+
+  if (value instanceof ArrayBuffer) {
+    return new Uint8Array(value);
+  }
+
+  if (ArrayBuffer.isView(value)) {
+    return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+  }
+
+  return null;
+}
+
+function withTimeout(promise, ms, message) {
+  let timer = null;
+
+  const timeout = new Promise((_, reject) => {
+    timer = globalThis.setTimeout(() => reject(new Error(message)), ms);
+  });
+
+  return Promise.race([promise, timeout]).finally(() => {
+    globalThis.clearTimeout(timer);
+  });
 }

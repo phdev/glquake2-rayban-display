@@ -208,9 +208,15 @@ async function importPak(event) {
     return;
   }
 
-  const record = await savePakFile(file);
-  refs.pakStatus.textContent = `${record.name} ${formatBytes(record.size)}`;
-  refs.statusText.textContent = engine ? "PAK ready for next launch" : "PAK ready";
+  refs.statusText.textContent = "Importing PAK...";
+
+  try {
+    const record = await savePakFile(file);
+    refs.pakStatus.textContent = `${record.name} ${formatBytes(record.size)}`;
+    refs.statusText.textContent = engine ? "PAK ready for next launch" : "PAK ready";
+  } catch (error) {
+    refs.statusText.textContent = `PAK import failed: ${error.message || error}`;
+  }
 }
 
 async function clearPak() {

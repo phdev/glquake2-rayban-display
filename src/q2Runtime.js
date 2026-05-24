@@ -4,6 +4,12 @@ const ENGINE_BASE = `${import.meta.env.BASE_URL}wasm/`;
 const BUNDLED_PAK_PATH = "baseq2/pak0.pak";
 const BUNDLED_PAK_URL = `${ENGINE_BASE}${BUNDLED_PAK_PATH}`;
 const BUNDLED_PAK_GZIP_URL = `${BUNDLED_PAK_URL}.gz`;
+const TIMEOUTS = {
+  probe: 15000,
+  script: 20000,
+  runtime: 30000,
+  pak: 90000
+};
 const REQUIRED_ENGINE_FILES = [
   "quake2.js",
   "quake2.wasm",
@@ -107,46 +113,74 @@ export async function bootQuake2({
   onStatus,
   onLog
 }) {
-  const missing = await probeEngineArtifacts();
+  const log = (text) => bootLog(output, text, onLog);
 
-  if (missing.length > 0) {
-    throw new Error(`Missing engine artifact: ${missing.join(", ")}`);
-  }
+  try {
+    log("Checking engine artifacts...");
+    const missing = await withTimeout(
+      probeEngineArtifacts(),
+      TIMEOUTS.probe,
+      "engine artifact check"
+    );
 
-  canvas.width = config.width;
-  canvas.height = config.height;
-  canvas.style.aspectRatio = `${config.width} / ${config.height}`;
-
-  const module = createModule({ canvas, output, status, config, onStatus, onLog });
-  const runtimeReady = new Promise((resolve, reject) => {
-    module.onRuntimeInitialized = () => resolve();
-    module.onAbort = (reason) => reject(new Error(String(reason || "Quake II aborted")));
-  });
-  window.Module = module;
-
-  await loadScript(`${ENGINE_BASE}quake2.js`);
-  await runtimeReady;
-  await installPakData(module.FS, onStatus, { writablePath: false });
-
-  if (typeof module.callMain !== "function") {
-    throw new Error("Quake II runtime did not expose callMain");
-  }
-
-  module.callMain([...module.arguments]);
-
-  return {
-    module,
-    callAddViewAngles(dyaw, dpitch) {
-      if (typeof module._Q2_AddViewAngles === "function") {
-        module._Q2_AddViewAngles(dyaw, dpitch);
-      }
-    },
-    setWearableAction(action, down) {
-      if (typeof module._Q2_SetWearableAction === "function") {
-        module._Q2_SetWearableAction(action, down ? 1 : 0);
-      }
+    if (missing.length > 0) {
+      throw new Error(`Missing engine artifact: ${missing.join(", ")}`);
     }
-  };
+
+    canvas.width = config.width;
+    canvas.height = config.height;
+    canvas.style.aspectRatio = `${config.width} / ${config.height}`;
+    log(`Canvas configured at ${config.width}x${config.height} for ${config.inputMode}`);
+
+    const module = createModule({ canvas, output, status, config, onStatus, onLog });
+    const runtimeReady = new Promise((resolve, reject) => {
+      module.onRuntimeInitialized = () => resolve();
+      module.onAbort = (reason) => reject(new Error(String(reason || "Quake II aborted")));
+    });
+    window.Module = module;
+
+    log("Loading engine script...");
+    await withTimeout(loadScript(`${ENGINE_BASE}quake2.js`), TIMEOUTS.script, "engine script load");
+
+    log("Waiting for WebAssembly runtime...");
+    await withTimeout(runtimeReady, TIMEOUTS.runtime, "WebAssembly runtime initialization");
+    log("Runtime initialized");
+
+    log("Installing PAK data...");
+    await withTimeout(
+      installPakData(module.FS, onStatus, {
+        writablePath: false,
+        log
+      }),
+      TIMEOUTS.pak,
+      "PAK install"
+    );
+
+    if (typeof module.callMain !== "function") {
+      throw new Error("Quake II runtime did not expose callMain");
+    }
+
+    log("Starting Quake II main...");
+    module.callMain([...module.arguments]);
+    log("Quake II main started");
+
+    return {
+      module,
+      callAddViewAngles(dyaw, dpitch) {
+        if (typeof module._Q2_AddViewAngles === "function") {
+          module._Q2_AddViewAngles(dyaw, dpitch);
+        }
+      },
+      setWearableAction(action, down) {
+        if (typeof module._Q2_SetWearableAction === "function") {
+          module._Q2_SetWearableAction(action, down ? 1 : 0);
+        }
+      }
+    };
+  } catch (error) {
+    log(`Error: ${error.message || error}`);
+    throw error;
+  }
 }
 
 function createModule({ canvas, output, status, config, onStatus, onLog }) {
@@ -182,7 +216,9 @@ function createModule({ canvas, output, status, config, onStatus, onLog }) {
       canvas.style.filter = gamma < 0 ? "" : `brightness(${gamma * 2})`;
     },
     captureMouse() {},
-    q2InstallPendingData: (FS) => installPakData(FS, onStatus),
+    q2InstallPendingData: (FS) => installPakData(FS, onStatus, {
+      log: (text) => bootLog(output, text, onLog)
+    }),
     noInitialRun: true,
     totalDependencies: 0,
     monitorRunDependencies(left) {
@@ -218,41 +254,55 @@ function buildArguments(config) {
   return args;
 }
 
-async function installPakData(FS, onStatus, options = { writablePath: true }) {
+async function installPakData(FS, onStatus, options = {}) {
+  const settings = {
+    writablePath: true,
+    log: null,
+    ...options
+  };
+  settings.log?.("Reading imported PAK storage...");
   const storedBytes = await readPakBytes();
 
   if (storedBytes) {
     onStatus?.("Installing imported PAK...");
-    writePak(FS, storedBytes, "imported", options);
+    settings.log?.(`Installing imported PAK (${formatByteCount(storedBytes.byteLength)})...`);
+    writePak(FS, storedBytes, "imported", settings);
     return;
   }
 
   if (fileExists(FS, "/baseq2/pak0.pak")) {
     onStatus?.("Bundled demo PAK ready");
+    settings.log?.("Bundled demo PAK is already mounted");
     console.info("Bundled demo PAK is embedded at /baseq2/pak0.pak");
     return;
   }
 
-  const bundledBytes = await readBundledPakBytes(onStatus);
+  const bundledBytes = await readBundledPakBytes(onStatus, settings.log);
   if (bundledBytes) {
-    writePak(FS, bundledBytes, "bundled", options);
+    settings.log?.(`Installing bundled PAK (${formatByteCount(bundledBytes.byteLength)})...`);
+    writePak(FS, bundledBytes, "bundled", settings);
   }
 }
 
-async function readBundledPakBytes(onStatus) {
+async function readBundledPakBytes(onStatus, log) {
   if ("DecompressionStream" in globalThis) {
     onStatus?.("Loading compressed demo PAK...");
+    log?.("Fetching compressed demo PAK...");
     const compressed = await fetchBytes(BUNDLED_PAK_GZIP_URL);
     if (compressed) {
       onStatus?.("Decompressing demo PAK...");
+      log?.(`Decompressing demo PAK (${formatByteCount(compressed.byteLength)} compressed)...`);
       return decompressGzip(compressed);
     }
+    log?.("Compressed demo PAK was not found; trying raw PAK...");
   }
 
   onStatus?.("Loading demo PAK...");
+  log?.("Fetching raw demo PAK...");
   const bytes = await fetchBytes(BUNDLED_PAK_URL);
   if (!bytes) {
     onStatus?.("No PAK available");
+    log?.("No bundled PAK was available");
   }
 
   return bytes;
@@ -284,6 +334,44 @@ function writePak(FS, pakBytes, source, options) {
   } else {
     console.info(`Installed ${source} PAK at /baseq2/pak0.pak`);
   }
+}
+
+function withTimeout(promise, ms, label) {
+  let timer = null;
+
+  const timeout = new Promise((_, reject) => {
+    timer = window.setTimeout(() => {
+      reject(new Error(`${label} timed out after ${Math.round(ms / 1000)}s`));
+    }, ms);
+  });
+
+  return Promise.race([promise, timeout]).finally(() => {
+    window.clearTimeout(timer);
+  });
+}
+
+function bootLog(output, text, onLog) {
+  const line = `[boot] ${text}`;
+  appendOutput(output, line);
+  onLog?.(line);
+  console.info(line);
+}
+
+function formatByteCount(value) {
+  if (!value) {
+    return "0 B";
+  }
+
+  const units = ["B", "KB", "MB", "GB"];
+  let amount = value;
+  let unit = 0;
+
+  while (amount >= 1024 && unit < units.length - 1) {
+    amount /= 1024;
+    unit += 1;
+  }
+
+  return `${amount.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
 }
 
 function fileExists(FS, path) {
