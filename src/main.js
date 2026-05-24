@@ -70,7 +70,16 @@ app.innerHTML = `
       </nav>
     </main>
 
-    <textarea id="consoleOutput" class="console-output" readonly aria-label="Engine log"></textarea>
+    <section class="console-panel" aria-label="Engine log">
+      <div class="console-bar">
+        <span>Terminal</span>
+        <div class="console-actions">
+          <span id="copyConsoleStatus" class="copy-status" aria-live="polite"></span>
+          <button class="secondary compact" id="copyConsoleButton" type="button">Copy</button>
+        </div>
+      </div>
+      <textarea id="consoleOutput" class="console-output" readonly aria-label="Engine log"></textarea>
+    </section>
   </div>
 `;
 
@@ -86,6 +95,8 @@ const refs = {
   pakStatus: document.querySelector("#pakStatus"),
   imuStatus: document.querySelector("#imuStatus"),
   consoleOutput: document.querySelector("#consoleOutput"),
+  copyConsoleButton: document.querySelector("#copyConsoleButton"),
+  copyConsoleStatus: document.querySelector("#copyConsoleStatus"),
   statusPanel: document.querySelector("#statusPanel"),
   forwardButton: document.querySelector("#forwardButton"),
   fireButton: document.querySelector("#fireButton"),
@@ -108,6 +119,7 @@ refs.importPakButton.addEventListener("click", () => refs.pakInput.click());
 refs.clearPakButton.addEventListener("click", clearPak);
 refs.pakInput.addEventListener("change", importPak);
 refs.startButton.addEventListener("click", start);
+refs.copyConsoleButton.addEventListener("click", copyConsoleOutput);
 
 initializeControls();
 refreshPakStatus();
@@ -239,4 +251,41 @@ function updateActionButton(action, enabled) {
   };
 
   buttonByAction[action]?.classList.toggle("is-active", enabled);
+}
+
+async function copyConsoleOutput() {
+  const text = refs.consoleOutput.value;
+
+  if (!text) {
+    setCopyStatus("Empty");
+    return;
+  }
+
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      fallbackCopyText(text);
+    }
+
+    setCopyStatus("Copied");
+  } catch {
+    fallbackCopyText(text);
+    setCopyStatus("Copied");
+  }
+}
+
+function fallbackCopyText(text) {
+  refs.consoleOutput.focus();
+  refs.consoleOutput.select();
+  document.execCommand("copy");
+  refs.consoleOutput.setSelectionRange(text.length, text.length);
+}
+
+function setCopyStatus(text) {
+  refs.copyConsoleStatus.textContent = text;
+  window.clearTimeout(setCopyStatus.timer);
+  setCopyStatus.timer = window.setTimeout(() => {
+    refs.copyConsoleStatus.textContent = "";
+  }, 1600);
 }
