@@ -39,7 +39,10 @@ fi
 
 install -d wasm/baseq2
 printf '\n' > wasm/baseq2/yq2.cfg
-printf '\n' > wasm/baseq2/autoexec.cfg
+cat > wasm/baseq2/autoexec.cfg <<'CFG'
+alias d1 "map demo1"
+set nextserver ""
+CFG
 
 emmake make EMSCRIPTEN=1 GL4ES_PATH="$GL4ES_PATH" -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"
 

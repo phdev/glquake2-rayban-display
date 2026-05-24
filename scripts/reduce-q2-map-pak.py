@@ -88,8 +88,13 @@ WEAPON_SOUND_PATTERNS = {
 }
 
 COMMON_WORLD_SOUNDS = (
+    "sound/doors/dr1_end.wav",
+    "sound/doors/dr1_mid.wav",
+    "sound/doors/dr1_strt.wav",
+    "sound/switches/butn2.wav",
     "sound/world/flesh1.wav",
     "sound/world/flesh2.wav",
+    "sound/world/land.wav",
     "sound/world/ric1.wav",
     "sound/world/ric2.wav",
     "sound/world/ric3.wav",

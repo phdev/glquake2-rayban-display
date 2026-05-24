@@ -247,11 +247,20 @@ function buildArguments(config) {
   ];
 
   const queryArgs = new URLSearchParams(window.location.search).get("args");
-  if (queryArgs) {
-    args.push(...queryArgs.trim().split(/\s+/));
+  const extraArgs = queryArgs ? queryArgs.trim().split(/\s+/).filter(Boolean) : [];
+
+  args.push(...extraArgs);
+
+  if (!hasStartupCommand(extraArgs)) {
+    args.push("+map", "demo1");
   }
 
   return args;
+}
+
+function hasStartupCommand(args) {
+  const commands = new Set(["+map", "+demomap", "+connect", "+load"]);
+  return args.some((arg) => commands.has(arg.toLowerCase()));
 }
 
 async function installPakData(FS, onStatus, options = {}) {

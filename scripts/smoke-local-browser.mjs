@@ -178,19 +178,31 @@ async function waitForAppReady(client) {
 
 async function waitForBootSuccess(client) {
   let latest = "";
+  let playableMapSeenAt = 0;
   const startedAt = Date.now();
 
   while (Date.now() - startedAt < BOOT_TIMEOUT_MS) {
     latest = await evaluate(client, "document.querySelector('#consoleOutput')?.value || ''");
 
-    if (/\\[boot\\] Error:|recursive shutdown|GetPCXPalette: Couldn't load/i.test(latest)) {
+    if (
+      /\\[boot\\] Error:|recursive shutdown|ERROR: Couldn't open|GetPCXPalette: Couldn't load|Server does not have this file/i.test(latest)
+    ) {
       throw new Error(`Quake boot failed:\n${tail(latest)}`);
     }
 
-    if (
+    const playableMapLoaded =
       latest.includes("Yamagi Quake II") &&
-      latest.includes("Refresh: Yamagi Quake II OpenGL ES3 Refresher")
-    ) {
+      latest.includes("Refresh: Yamagi Quake II OpenGL ES3 Refresher") &&
+      latest.includes("==== Yamagi Quake II Initialized ====") &&
+      /Outer Base|SpawnServer:\s*demo1|maps\/demo1\.bsp/i.test(latest);
+
+    if (playableMapLoaded && !playableMapSeenAt) {
+      playableMapSeenAt = Date.now();
+    } else if (!playableMapLoaded) {
+      playableMapSeenAt = 0;
+    }
+
+    if (playableMapSeenAt && Date.now() - playableMapSeenAt >= 3000) {
       return latest;
     }
 
