@@ -223,10 +223,10 @@ index 32d0e61..10162e8 100644
  }
 -
 diff --git a/src/game/player/client.c b/src/game/player/client.c
-index 4f37cbb..897677e 100644
+index 4f37cbb..5178cc2 100644
 --- a/src/game/player/client.c
 +++ b/src/game/player/client.c
-@@ -27,6 +27,158 @@
+@@ -27,6 +27,190 @@
  #include "../header/local.h"
  #include "../monster/misc/player.h"
  
@@ -285,6 +285,33 @@ index 4f37cbb..897677e 100644
 +	return Q2_WearableEnemyTarget(tr.ent);
 +}
 +
++static qboolean
++Q2_WearableCanTraceEnemy(edict_t *ent, edict_t *candidate)
++{
++	vec3_t start, end;
++	trace_t tr;
++
++	if (!ent || !ent->client || !Q2_WearableEnemyTarget(candidate))
++	{
++		return false;
++	}
++
++	VectorCopy(ent->s.origin, start);
++	start[2] += ent->viewheight;
++
++	VectorCopy(candidate->s.origin, end);
++	end[2] += (candidate->mins[2] + candidate->maxs[2]) * 0.5f;
++
++	tr = gi.trace(start, NULL, NULL, end, ent, MASK_SHOT);
++
++	if (tr.startsolid)
++	{
++		return false;
++	}
++
++	return (tr.ent == candidate) || (tr.fraction >= 1.0f);
++}
++
 +static edict_t *
 +Q2_WearableFindSideEnemy(edict_t *ent, int direction, float *yaw_out)
 +{
@@ -318,6 +345,11 @@ index 4f37cbb..897677e 100644
 +		dist = VectorNormalize(offset);
 +
 +		if ((dist <= 1.0f) || (dist > Q2_WEARABLE_ENEMY_RANGE))
++		{
++			continue;
++		}
++
++		if (!Q2_WearableCanTraceEnemy(ent, candidate))
 +		{
 +			continue;
 +		}
@@ -385,7 +417,7 @@ index 4f37cbb..897677e 100644
  void ClientUserinfoChanged(edict_t *ent, char *userinfo);
  void SP_misc_teleporter_dest(edict_t *ent);
  void Touch_Item(edict_t *ent, edict_t *other, cplane_t *plane, csurface_t *surf);
-@@ -763,7 +915,11 @@ player_die(edict_t *self, edict_t *inflictor, edict_t *attacker,
+@@ -763,7 +947,11 @@ player_die(edict_t *self, edict_t *inflictor, edict_t *attacker,
  
  	if (!self->deadflag)
  	{
@@ -397,7 +429,7 @@ index 4f37cbb..897677e 100644
  		LookAtKiller(self, inflictor, attacker);
  		self->client->ps.pmove.pm_type = PM_DEAD;
  		ClientObituary(self, inflictor, attacker);
-@@ -2123,6 +2279,15 @@ ClientThink(edict_t *ent, usercmd_t *ucmd)
+@@ -2123,6 +2311,15 @@ ClientThink(edict_t *ent, usercmd_t *ucmd)
  
  	pm_passent = ent;
  
@@ -413,7 +445,7 @@ index 4f37cbb..897677e 100644
  	if (ent->client->chase_target)
  	{
  		client->resp.cmd_angles[0] = SHORT2ANGLE(ucmd->angles[0]);
-@@ -2371,6 +2536,11 @@ ClientBeginServerFrame(edict_t *ent)
+@@ -2371,6 +2568,11 @@ ClientBeginServerFrame(edict_t *ent)
  		/* wait for any button just going down */
  		if (level.time > client->respawn_time)
  		{
@@ -425,7 +457,7 @@ index 4f37cbb..897677e 100644
  			/* in deathmatch, only wait for attack button */
  			if (deathmatch->value)
  			{
-@@ -2387,6 +2557,7 @@ ClientBeginServerFrame(edict_t *ent)
+@@ -2387,6 +2589,7 @@ ClientBeginServerFrame(edict_t *ent)
  				respawn(ent);
  				client->latched_buttons = 0;
  			}
