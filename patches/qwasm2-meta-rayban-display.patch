@@ -223,17 +223,17 @@ index 32d0e61..10162e8 100644
  }
 -
 diff --git a/src/game/player/client.c b/src/game/player/client.c
-index 4f37cbb..5178cc2 100644
+index 4f37cbb..ca06bd5 100644
 --- a/src/game/player/client.c
 +++ b/src/game/player/client.c
-@@ -27,6 +27,190 @@
+@@ -27,6 +27,205 @@
  #include "../header/local.h"
  #include "../monster/misc/player.h"
  
 +#ifdef __EMSCRIPTEN__
 +#define Q2_WEARABLE_ENEMY_RANGE 900.0f
-+#define Q2_WEARABLE_SIDE_DOT 0.25f
-+#define Q2_WEARABLE_CENTER_DOT 0.70f
++#define Q2_WEARABLE_VIEW_HALF_ANGLE 45.0f
++#define Q2_WEARABLE_REAR_BOTH_ANGLE 160.0f
 +
 +extern int Q2_ConsumeEnemyTurn(void);
 +extern void Q2_SetEnemyIndicators(int left, int right);
@@ -312,10 +312,23 @@ index 4f37cbb..5178cc2 100644
 +	return (tr.ent == candidate) || (tr.fraction >= 1.0f);
 +}
 +
++static float
++Q2_WearableNormalize180(float angle)
++{
++	angle = anglemod(angle);
++
++	if (angle > 180.0f)
++	{
++		angle -= 360.0f;
++	}
++
++	return angle;
++}
++
 +static edict_t *
 +Q2_WearableFindSideEnemy(edict_t *ent, int direction, float *yaw_out)
 +{
-+	vec3_t forward, right, offset, angles;
++	vec3_t offset;
 +	edict_t *best;
 +	float best_dist;
 +	int i;
@@ -328,12 +341,10 @@ index 4f37cbb..5178cc2 100644
 +	best = NULL;
 +	best_dist = Q2_WEARABLE_ENEMY_RANGE + 1.0f;
 +
-+	AngleVectors(ent->client->v_angle, forward, right, NULL);
-+
 +	for (i = 1; i < globals.num_edicts; i++)
 +	{
 +		edict_t *candidate = &g_edicts[i];
-+		float dist, side, center;
++		float dist, target_yaw, yaw_delta, abs_yaw_delta;
 +
 +		if (!Q2_WearableEnemyTarget(candidate))
 +		{
@@ -349,21 +360,26 @@ index 4f37cbb..5178cc2 100644
 +			continue;
 +		}
 +
++		target_yaw = vectoyaw(offset);
++		yaw_delta = Q2_WearableNormalize180(target_yaw - ent->client->v_angle[YAW]);
++		abs_yaw_delta = yaw_delta < 0.0f ? -yaw_delta : yaw_delta;
++
++		if (abs_yaw_delta <= Q2_WEARABLE_VIEW_HALF_ANGLE)
++		{
++			continue;
++		}
++
++		if (((direction < 0) &&
++			 (yaw_delta <= Q2_WEARABLE_VIEW_HALF_ANGLE) &&
++			 (abs_yaw_delta < Q2_WEARABLE_REAR_BOTH_ANGLE)) ||
++			((direction > 0) &&
++			 (yaw_delta >= -Q2_WEARABLE_VIEW_HALF_ANGLE) &&
++			 (abs_yaw_delta < Q2_WEARABLE_REAR_BOTH_ANGLE)))
++		{
++			continue;
++		}
++
 +		if (!Q2_WearableCanTraceEnemy(ent, candidate))
-+		{
-+			continue;
-+		}
-+
-+		side = DotProduct(offset, right);
-+		center = DotProduct(offset, forward);
-+
-+		if (((direction < 0) && (side > -Q2_WEARABLE_SIDE_DOT)) ||
-+			((direction > 0) && (side < Q2_WEARABLE_SIDE_DOT)))
-+		{
-+			continue;
-+		}
-+
-+		if (center > Q2_WEARABLE_CENTER_DOT)
 +		{
 +			continue;
 +		}
@@ -375,8 +391,7 @@ index 4f37cbb..5178cc2 100644
 +
 +			if (yaw_out)
 +			{
-+				vectoangles(offset, angles);
-+				*yaw_out = angles[YAW];
++				*yaw_out = target_yaw;
 +			}
 +		}
 +	}
@@ -417,7 +432,7 @@ index 4f37cbb..5178cc2 100644
  void ClientUserinfoChanged(edict_t *ent, char *userinfo);
  void SP_misc_teleporter_dest(edict_t *ent);
  void Touch_Item(edict_t *ent, edict_t *other, cplane_t *plane, csurface_t *surf);
-@@ -763,7 +947,11 @@ player_die(edict_t *self, edict_t *inflictor, edict_t *attacker,
+@@ -763,7 +962,11 @@ player_die(edict_t *self, edict_t *inflictor, edict_t *attacker,
  
  	if (!self->deadflag)
  	{
@@ -429,7 +444,7 @@ index 4f37cbb..5178cc2 100644
  		LookAtKiller(self, inflictor, attacker);
  		self->client->ps.pmove.pm_type = PM_DEAD;
  		ClientObituary(self, inflictor, attacker);
-@@ -2123,6 +2311,15 @@ ClientThink(edict_t *ent, usercmd_t *ucmd)
+@@ -2123,6 +2326,15 @@ ClientThink(edict_t *ent, usercmd_t *ucmd)
  
  	pm_passent = ent;
  
@@ -445,7 +460,7 @@ index 4f37cbb..5178cc2 100644
  	if (ent->client->chase_target)
  	{
  		client->resp.cmd_angles[0] = SHORT2ANGLE(ucmd->angles[0]);
-@@ -2371,6 +2568,11 @@ ClientBeginServerFrame(edict_t *ent)
+@@ -2371,6 +2583,11 @@ ClientBeginServerFrame(edict_t *ent)
  		/* wait for any button just going down */
  		if (level.time > client->respawn_time)
  		{
@@ -457,7 +472,7 @@ index 4f37cbb..5178cc2 100644
  			/* in deathmatch, only wait for attack button */
  			if (deathmatch->value)
  			{
-@@ -2387,6 +2589,7 @@ ClientBeginServerFrame(edict_t *ent)
+@@ -2387,6 +2604,7 @@ ClientBeginServerFrame(edict_t *ent)
  				respawn(ent);
  				client->latched_buttons = 0;
  			}
