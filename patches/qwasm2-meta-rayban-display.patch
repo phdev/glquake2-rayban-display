@@ -223,7 +223,7 @@ index 32d0e61..10162e8 100644
  }
 -
 diff --git a/src/game/player/client.c b/src/game/player/client.c
-index 4f37cbb..ca06bd5 100644
+index 4f37cbb..106310d 100644
 --- a/src/game/player/client.c
 +++ b/src/game/player/client.c
 @@ -27,6 +27,205 @@
@@ -423,7 +423,7 @@ index 4f37cbb..ca06bd5 100644
 +		((turn > 0) && Q2_WearableFindSideEnemy(ent, 1, &yaw)))
 +	{
 +		ent->client->v_angle[YAW] = yaw;
-+		ucmd->angles[YAW] = ANGLE2SHORT(yaw);
++		ucmd->angles[YAW] = ANGLE2SHORT(yaw) - ent->client->ps.pmove.delta_angles[YAW];
 +		Q2_SetViewYaw(yaw);
 +	}
 +}
