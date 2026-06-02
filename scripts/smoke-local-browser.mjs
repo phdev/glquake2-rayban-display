@@ -75,15 +75,12 @@ try {
     `(() => {
       const loading = document.querySelector('#loadingPanel');
       const meter = document.querySelector('#yawMeter');
-      const renderer = document.querySelector('#renderStatus');
       const enemyLeft = document.querySelector('#enemyLeftIndicator');
       const enemyRight = document.querySelector('#enemyRightIndicator');
-      if (!loading || !meter || !renderer || !enemyLeft || !enemyRight) return null;
+      if (!loading || !meter || !enemyLeft || !enemyRight) return null;
       const loadingStyle = getComputedStyle(loading);
       const meterStyle = getComputedStyle(meter);
-      const rendererStyle = getComputedStyle(renderer);
       const meterBox = meter.getBoundingClientRect();
-      const rendererBox = renderer.getBoundingClientRect();
       return {
         loadingHidden:
           loading.hidden ||
@@ -94,13 +91,11 @@ try {
           Number(meterStyle.opacity) > 0.05 &&
           meterBox.width > 0 &&
           meterBox.height > 0,
-        rendererVisible:
-          rendererStyle.visibility !== 'hidden' &&
-          Number(rendererStyle.opacity || '1') > 0.05 &&
-          rendererBox.width > 0 &&
-          rendererBox.height > 0,
-        rendererMode: renderer.dataset.mode || '',
-        rendererText: renderer.textContent || '',
+        removedUiAbsent:
+          !document.querySelector('#renderStatus') &&
+          !document.querySelector('#consoleToggleButton') &&
+          !document.querySelector('#consolePanel') &&
+          !document.querySelector('#consoleOutput'),
         enemyLeftAttached: Boolean(enemyLeft),
         enemyRightAttached: Boolean(enemyRight)
       };
@@ -127,8 +122,8 @@ try {
     throw new Error("Expected IMU yaw meter to be visible");
   }
 
-  if (!overlay?.rendererVisible || !["gpu", "software"].includes(overlay.rendererMode)) {
-    throw new Error(`Expected visible renderer status to report gpu/software, got ${JSON.stringify(overlay)}`);
+  if (!overlay?.removedUiAbsent) {
+    throw new Error(`Expected console and renderer status UI to be absent, got ${JSON.stringify(overlay)}`);
   }
 
   if (!overlay.enemyLeftAttached || !overlay.enemyRightAttached) {
@@ -138,7 +133,6 @@ try {
   console.log("Smoke test passed.");
   console.log(`Terminal lines: ${terminal.trim().split("\n").length}`);
   console.log(`WebGL context: ${webgl.width}x${webgl.height} CSS ${webgl.cssWidth}x${webgl.cssHeight} ${webgl.vendor} / ${webgl.renderer}`);
-  console.log(`Renderer status: ${overlay.rendererText.trim()} (${overlay.rendererMode})`);
 } finally {
   client?.close();
   await cleanup();
@@ -245,8 +239,8 @@ async function connectCdp(webSocketDebuggerUrl) {
 
 async function waitForAppReady(client) {
   await waitFor(async () => {
-    return evaluate(client, "Boolean(document.querySelector('#consoleOutput'))");
-  }, "app terminal");
+    return evaluate(client, "Boolean(document.querySelector('#gameCanvas'))");
+  }, "app canvas");
 }
 
 async function assertAutoStartEnabled(client) {
@@ -269,7 +263,7 @@ async function waitForBootSuccess(client) {
   const startedAt = Date.now();
 
   while (Date.now() - startedAt < BOOT_TIMEOUT_MS) {
-    latest = await evaluate(client, "document.querySelector('#consoleOutput')?.value || ''");
+    latest = await evaluate(client, "Array.isArray(window.__q2Logs) ? window.__q2Logs.join('\\n') : ''");
 
     if (
       /\[boot\] Error:|recursive shutdown|ERROR: Couldn't open|GetPCXPalette: Couldn't load|Server does not have this file/i.test(latest)

@@ -47,34 +47,6 @@ body {
   image-rendering: auto;
 }
 
-.render-status {
-  position: fixed;
-  left: 8px;
-  top: 8px;
-  z-index: 1;
-  min-width: 54px;
-  min-height: 24px;
-  border: 1px solid rgba(143, 140, 130, 0.58);
-  border-radius: 6px;
-  padding: 5px 8px 4px;
-  background: rgba(5, 5, 5, 0.62);
-  color: #d7d1c4;
-  font-size: 0.66rem;
-  line-height: 1;
-  text-align: center;
-  pointer-events: none;
-}
-
-.render-status[data-mode="gpu"] {
-  border-color: rgba(86, 196, 126, 0.72);
-  color: #7ce29d;
-}
-
-.render-status[data-mode="software"] {
-  border-color: rgba(242, 162, 58, 0.72);
-  color: #f2a23a;
-}
-
 .enemy-indicator {
   position: fixed;
   top: 50%;
@@ -205,71 +177,6 @@ body {
 .yaw-meter::before,
 .yaw-meter::after {
   will-change: left, background;
-}
-
-.console-toggle {
-  position: fixed;
-  right: 10px;
-  bottom: 10px;
-  z-index: 3;
-  min-width: 82px;
-  min-height: 34px;
-  border: 1px solid #3f3f3b;
-  border-radius: 6px;
-  padding: 0 12px;
-  background: rgba(12, 12, 12, 0.9);
-  color: #f1eadb;
-  font: inherit;
-  font-size: 0.74rem;
-  letter-spacing: 0;
-}
-
-.console-panel {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 52px;
-  z-index: 2;
-  height: min(46vh, 360px);
-  border-top: 1px solid #2c2b27;
-  background: rgba(5, 5, 5, 0.94);
-}
-
-.terminal-output {
-  display: block;
-  width: 100%;
-  height: 100%;
-  border: 0;
-  padding: 10px 12px;
-  resize: none;
-  outline: none;
-  background: transparent;
-  color: #d7d1c4;
-  font: inherit;
-  font-size: 0.78rem;
-  line-height: 1.42;
-  white-space: pre;
-}
-
-@media (max-width: 640px) {
-  .console-toggle {
-    right: 8px;
-    bottom: 8px;
-    min-width: 72px;
-    min-height: 32px;
-    font-size: 0.7rem;
-  }
-
-  .console-panel {
-    bottom: 48px;
-    height: 42vh;
-  }
-
-  .terminal-output {
-    padding: 8px;
-    font-size: 0.72rem;
-    line-height: 1.36;
-  }
 }
 
 .runtime-hidden {

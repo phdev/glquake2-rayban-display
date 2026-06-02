@@ -17,11 +17,13 @@ const enemyPresence = {
   left: false,
   right: false
 };
+const runtimeLogs = [];
+
+window.__q2Logs = runtimeLogs;
 
 app.innerHTML = `
   <main class="game-shell" aria-label="GLQuake II runtime">
     <canvas id="gameCanvas" class="game-canvas" tabindex="-1"></canvas>
-    <div id="renderStatus" class="render-status" data-mode="unknown" aria-label="Renderer status">Renderer</div>
     <div id="enemyLeftIndicator" class="enemy-indicator enemy-indicator-left" aria-hidden="true"></div>
     <div id="enemyRightIndicator" class="enemy-indicator enemy-indicator-right" aria-hidden="true"></div>
     <section id="loadingPanel" class="loading-panel" role="status" aria-live="polite">
@@ -40,16 +42,11 @@ app.innerHTML = `
     <div id="yawMeter" class="yaw-meter" data-zone="deadzone" aria-hidden="true"></div>
     <span id="statusText" class="runtime-hidden" aria-hidden="true"></span>
     <span id="imuStatus" class="runtime-hidden" aria-hidden="true"></span>
-    <button id="consoleToggleButton" class="console-toggle" type="button" aria-expanded="false">Console</button>
-    <section id="consolePanel" class="console-panel" hidden>
-      <textarea id="consoleOutput" class="terminal-output" readonly spellcheck="false" aria-label="Terminal"></textarea>
-    </section>
   </main>
 `;
 
 const refs = {
   canvas: document.querySelector("#gameCanvas"),
-  renderStatus: document.querySelector("#renderStatus"),
   enemyLeftIndicator: document.querySelector("#enemyLeftIndicator"),
   enemyRightIndicator: document.querySelector("#enemyRightIndicator"),
   loadingPanel: document.querySelector("#loadingPanel"),
@@ -58,16 +55,12 @@ const refs = {
   loadingBar: document.querySelector("#loadingBar"),
   yawMeter: document.querySelector("#yawMeter"),
   statusText: document.querySelector("#statusText"),
-  imuStatus: document.querySelector("#imuStatus"),
-  consolePanel: document.querySelector("#consolePanel"),
-  consoleToggleButton: document.querySelector("#consoleToggleButton"),
-  consoleOutput: document.querySelector("#consoleOutput")
+  imuStatus: document.querySelector("#imuStatus")
 };
 
 refs.canvas.width = runtimeConfig.width;
 refs.canvas.height = runtimeConfig.height;
 refs.canvas.style.aspectRatio = `${runtimeConfig.width} / ${runtimeConfig.height}`;
-refs.consoleToggleButton.addEventListener("click", toggleConsole);
 refs.canvas.focus({ preventScroll: true });
 
 window.__q2AutoStart = true;
@@ -89,7 +82,7 @@ async function start() {
   try {
     engine = await bootQuake2({
       canvas: refs.canvas,
-      output: refs.consoleOutput,
+      output: null,
       status: refs.statusText,
       config: runtimeConfig,
       onProgress: ({ percent, label }) => {
@@ -116,7 +109,7 @@ async function start() {
       onRecenter: () => headTracking.recenter(),
       onTurnBurst: (direction) => headTracking.addTurnBurst(direction),
       hasEnemySide: (side) => Boolean(enemyPresence[side]),
-      onEnemyTurnRequest: (direction) => engine.requestEnemyTurn(direction)
+      onEnemyTurnRequest: requestEnemyTurn
     });
 
     wearableInput.install();
@@ -127,10 +120,9 @@ async function start() {
     scheduleLoadingHide(8000);
   } catch (error) {
     refs.statusText.textContent = error.message || String(error);
-    appendTerminal(`[app] ${refs.statusText.textContent}`);
+    appendRuntimeLog(`[app] ${refs.statusText.textContent}`);
     setLoadingProgress(100, "Error");
     setLoadingVisible(false);
-    setConsoleVisible(true);
   } finally {
     booting = false;
   }
@@ -142,27 +134,25 @@ async function startHeadTracking() {
   } catch (error) {
     const message = error.message || String(error);
     refs.imuStatus.textContent = message;
-    appendTerminal(`[imu] ${message}`);
+    appendRuntimeLog(`[imu] ${message}`);
   }
 }
 
-function appendTerminal(text) {
-  refs.consoleOutput.value += `${text}\n`;
-  refs.consoleOutput.scrollTop = refs.consoleOutput.scrollHeight;
+function appendRuntimeLog(text) {
+  runtimeLogs.push(String(text));
+
+  if (runtimeLogs.length > 1500) {
+    runtimeLogs.splice(0, runtimeLogs.length - 1500);
+  }
 }
 
 function handleRuntimeLog(text) {
+  appendRuntimeLog(text);
+
   if (/Loading library: ref_gles3/i.test(text)) {
     setLoadingProgress(82, "Loading renderer");
-    setRenderStatus("gpu", "OpenGL ES/WebGL renderer loading");
   } else if (/Successfully loaded ref_gles3/i.test(text)) {
     setLoadingProgress(88, "Loading game");
-    setRenderStatus("gpu", "OpenGL ES/WebGL renderer active");
-  } else if (/Loading library: ref_soft/i.test(text)) {
-    setRenderStatus("software", "Software renderer loading");
-  } else if (/GL_RENDERER:\s*(.+)$/i.test(text)) {
-    const [, renderer] = text.match(/GL_RENDERER:\s*(.+)$/i);
-    setRenderStatus(classifyRenderer(renderer), renderer);
   } else if (/Loading library: game_baseq2/i.test(text)) {
     setLoadingProgress(90, "Loading game");
   } else if (/==== Yamagi Quake II Initialized ====/i.test(text)) {
@@ -187,16 +177,35 @@ function setEnemyIndicators({ left, right }) {
   refs.enemyRightIndicator.classList.toggle("is-visible", enemyPresence.right);
 }
 
-function setRenderStatus(mode, detail) {
-  refs.renderStatus.dataset.mode = mode;
-  refs.renderStatus.textContent = mode === "software" ? "Software" : mode === "gpu" ? "GPU" : "Renderer";
-  refs.renderStatus.title = detail ? `Renderer: ${detail}` : "Renderer status";
+function requestEnemyTurn(direction) {
+  const selectedEngine = engine;
+
+  selectedEngine?.requestEnemyTurn(direction);
+  snapViewToEnemy(direction, selectedEngine);
 }
 
-function classifyRenderer(renderer) {
-  return /swiftshader|software|llvmpipe|softpipe|warp|mesa offscreen|cpu/i.test(renderer)
-    ? "software"
-    : "gpu";
+function snapViewToEnemy(direction, selectedEngine = engine) {
+  const module = selectedEngine?.module;
+
+  if (
+    !module ||
+    typeof module._Q2_GetEnemyYaw !== "function" ||
+    typeof module._Q2_SetViewYaw !== "function"
+  ) {
+    return;
+  }
+
+  const normalized = direction < 0 ? -1 : 1;
+  const yaw = module._Q2_GetEnemyYaw(normalized);
+
+  if (!Number.isFinite(yaw)) {
+    return;
+  }
+
+  const apply = () => module._Q2_SetViewYaw(yaw);
+  apply();
+  window.requestAnimationFrame(apply);
+  window.setTimeout(apply, 50);
 }
 
 function setLoadingProgress(percent, label) {
@@ -230,21 +239,4 @@ function scheduleLoadingHide(delayMs) {
   loadingHideTimer = window.setTimeout(() => {
     setLoadingVisible(false);
   }, delayMs);
-}
-
-function toggleConsole() {
-  setConsoleVisible(refs.consolePanel.hidden);
-}
-
-function setConsoleVisible(visible) {
-  refs.consolePanel.hidden = !visible;
-  refs.consoleToggleButton.textContent = visible ? "Hide" : "Console";
-  refs.consoleToggleButton.setAttribute("aria-expanded", String(visible));
-
-  if (visible) {
-    refs.consoleOutput.scrollTop = refs.consoleOutput.scrollHeight;
-    refs.consoleOutput.focus();
-  } else {
-    refs.canvas.focus();
-  }
 }
