@@ -107,9 +107,7 @@ async function start() {
     wearableInput = createWearableInput({
       getEngine: () => engine,
       onRecenter: () => headTracking.recenter(),
-      onTurnBurst: (direction) => headTracking.addTurnBurst(direction),
-      hasEnemySide: (side) => Boolean(enemyPresence[side]),
-      onEnemyTurnRequest: requestEnemyTurn
+      onTurnBurst: (direction) => headTracking.addTurnBurst(direction)
     });
 
     wearableInput.install();
@@ -175,37 +173,6 @@ function setEnemyIndicators({ left, right }) {
   enemyPresence.right = Boolean(right);
   refs.enemyLeftIndicator.classList.toggle("is-visible", enemyPresence.left);
   refs.enemyRightIndicator.classList.toggle("is-visible", enemyPresence.right);
-}
-
-function requestEnemyTurn(direction) {
-  const selectedEngine = engine;
-
-  selectedEngine?.requestEnemyTurn(direction);
-  snapViewToEnemy(direction, selectedEngine);
-}
-
-function snapViewToEnemy(direction, selectedEngine = engine) {
-  const module = selectedEngine?.module;
-
-  if (
-    !module ||
-    typeof module._Q2_GetEnemyYaw !== "function" ||
-    typeof module._Q2_SetViewYaw !== "function"
-  ) {
-    return;
-  }
-
-  const normalized = direction < 0 ? -1 : 1;
-  const yaw = module._Q2_GetEnemyYaw(normalized);
-
-  if (!Number.isFinite(yaw)) {
-    return;
-  }
-
-  const apply = () => module._Q2_SetViewYaw(yaw);
-  apply();
-  window.requestAnimationFrame(apply);
-  window.setTimeout(apply, 50);
 }
 
 function setLoadingProgress(percent, label) {

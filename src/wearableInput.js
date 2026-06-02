@@ -19,12 +19,8 @@ export function createWearableInput({
   onForwardChange,
   onActionChange,
   onRecenter,
-  onTurnBurst,
-  hasEnemySide,
-  onEnemyTurnRequest
+  onTurnBurst
 }) {
-  let lastUpGesture = 0;
-
   function install() {
     document.addEventListener("keydown", onKeyDown, true);
     document.addEventListener("keyup", onKeyUp, true);
@@ -76,14 +72,7 @@ export function createWearableInput({
     }
 
     if (gesture === "swipeUp") {
-      const now = performance.now();
-      if (now - lastUpGesture < 360) {
-        pulseAction("jump", 240);
-        pulseAction("attack", 260);
-      } else {
-        pulseAction("attack", 180);
-      }
-      lastUpGesture = now;
+      pulseAction("jump", 240);
       return;
     }
 
@@ -93,30 +82,13 @@ export function createWearableInput({
     }
 
     if (gesture === "swipeLeft") {
-      if (turnToEnemySide("left", -1)) {
-        return;
-      }
-
       onTurnBurst?.(1);
       return;
     }
 
     if (gesture === "swipeRight") {
-      if (turnToEnemySide("right", 1)) {
-        return;
-      }
-
       onTurnBurst?.(-1);
     }
-  }
-
-  function turnToEnemySide(side, direction) {
-    if (!hasEnemySide?.(side)) {
-      return false;
-    }
-
-    onEnemyTurnRequest?.(direction);
-    return true;
   }
 
   function setAction(action, down) {
@@ -143,7 +115,7 @@ export function createWearableInput({
   }
 
   function fire() {
-    handleGesture("swipeUp", true);
+    pulseAction("attack", 180);
   }
 
   function jumpFire() {

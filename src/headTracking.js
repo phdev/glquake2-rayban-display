@@ -116,7 +116,7 @@ export function createHeadTracking({
       return 0;
     }
 
-    const step = clamp(burstRemaining, -3, 3);
+    const step = clamp(burstRemaining, -6, 6);
     burstRemaining -= step;
     return step;
   }
