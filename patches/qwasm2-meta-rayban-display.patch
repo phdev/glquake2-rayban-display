@@ -265,10 +265,10 @@ index 32d0e61..4061803 100644
  }
 -
 diff --git a/src/game/player/client.c b/src/game/player/client.c
-index 4f37cbb..1b44226 100644
+index 4f37cbb..de75bee 100644
 --- a/src/game/player/client.c
 +++ b/src/game/player/client.c
-@@ -27,6 +27,240 @@
+@@ -27,6 +27,324 @@
  #include "../header/local.h"
  #include "../monster/misc/player.h"
  
@@ -276,6 +276,7 @@ index 4f37cbb..1b44226 100644
 +#include <emscripten/emscripten.h>
 +
 +#define Q2_WEARABLE_ENEMY_RANGE 900.0f
++#define Q2_WEARABLE_AUTOFIRE_DOT 0.8660254f
 +#define Q2_WEARABLE_VIEW_HALF_ANGLE 45.0f
 +#define Q2_WEARABLE_REAR_BOTH_ANGLE 160.0f
 +
@@ -327,24 +328,18 @@ index 4f37cbb..1b44226 100644
 +	return true;
 +}
 +
-+static qboolean
-+Q2_WearableShouldAutoFire(edict_t *ent)
++static void
++Q2_WearableTargetCenter(edict_t *candidate, vec3_t center)
 +{
-+	vec3_t forward, start, end;
-+	trace_t tr;
++	VectorCopy(candidate->s.origin, center);
++	center[2] += (candidate->mins[2] + candidate->maxs[2]) * 0.5f;
++}
 +
-+	if (!ent || !ent->client || ent->deadflag)
-+	{
-+		return false;
-+	}
-+
-+	AngleVectors(ent->client->v_angle, forward, NULL, NULL);
++static void
++Q2_WearableViewOrigin(edict_t *ent, vec3_t start)
++{
 +	VectorCopy(ent->s.origin, start);
 +	start[2] += ent->viewheight;
-+	VectorMA(start, 1000, forward, end);
-+
-+	tr = gi.trace(start, NULL, NULL, end, ent, MASK_SHOT);
-+	return Q2_WearableEnemyTarget(tr.ent);
 +}
 +
 +static qboolean
@@ -358,11 +353,8 @@ index 4f37cbb..1b44226 100644
 +		return false;
 +	}
 +
-+	VectorCopy(ent->s.origin, start);
-+	start[2] += ent->viewheight;
-+
-+	VectorCopy(candidate->s.origin, end);
-+	end[2] += (candidate->mins[2] + candidate->maxs[2]) * 0.5f;
++	Q2_WearableViewOrigin(ent, start);
++	Q2_WearableTargetCenter(candidate, end);
 +
 +	tr = gi.trace(start, NULL, NULL, end, ent, MASK_SHOT);
 +
@@ -372,6 +364,73 @@ index 4f37cbb..1b44226 100644
 +	}
 +
 +	return (tr.ent == candidate) || (tr.fraction >= 1.0f);
++}
++
++static qboolean
++Q2_WearableFindAutoFireTarget(edict_t *ent, vec3_t aim_angles)
++{
++	vec3_t view_forward, start;
++	edict_t *best;
++	float best_dot, best_dist;
++	int i;
++
++	if (!ent || !ent->client || ent->deadflag)
++	{
++		return false;
++	}
++
++	AngleVectors(ent->client->v_angle, view_forward, NULL, NULL);
++	Q2_WearableViewOrigin(ent, start);
++
++	best = NULL;
++	best_dot = Q2_WEARABLE_AUTOFIRE_DOT;
++	best_dist = Q2_WEARABLE_ENEMY_RANGE + 1.0f;
++
++	for (i = 1; i < globals.num_edicts; i++)
++	{
++		edict_t *candidate = &g_edicts[i];
++		vec3_t target, direction;
++		float dist, dot;
++
++		if (!Q2_WearableEnemyTarget(candidate))
++		{
++			continue;
++		}
++
++		Q2_WearableTargetCenter(candidate, target);
++		VectorSubtract(target, start, direction);
++		dist = VectorNormalize(direction);
++
++		if ((dist <= 1.0f) || (dist > Q2_WEARABLE_ENEMY_RANGE))
++		{
++			continue;
++		}
++
++		dot = DotProduct(view_forward, direction);
++
++		if ((dot < Q2_WEARABLE_AUTOFIRE_DOT) ||
++			(dot < best_dot && best))
++		{
++			continue;
++		}
++
++		if ((dot == best_dot) && (dist >= best_dist))
++		{
++			continue;
++		}
++
++		if (!Q2_WearableCanTraceEnemy(ent, candidate))
++		{
++			continue;
++		}
++
++		best = candidate;
++		best_dot = dot;
++		best_dist = dist;
++		vectoangles(direction, aim_angles);
++	}
++
++	return best != NULL;
 +}
 +
 +static float
@@ -504,12 +563,37 @@ index 4f37cbb..1b44226 100644
 +		Q2_WearableSetClientYaw(yaw);
 +	}
 +}
++
++static void
++Q2_WearableThinkWeapon(edict_t *ent, qboolean auto_aim)
++{
++	vec3_t aim_angles, restore_angles;
++	qboolean restore;
++
++	restore = false;
++
++	if (auto_aim && ent && ent->client &&
++		Q2_WearableFindAutoFireTarget(ent, aim_angles))
++	{
++		restore = true;
++		VectorCopy(ent->client->v_angle, restore_angles);
++		VectorCopy(aim_angles, ent->client->v_angle);
++	}
++
++	Think_Weapon(ent);
++
++	if (restore)
++	{
++		VectorCopy(restore_angles, ent->client->v_angle);
++		VectorCopy(restore_angles, ent->client->ps.viewangles);
++	}
++}
 +#endif
 +
  void ClientUserinfoChanged(edict_t *ent, char *userinfo);
  void SP_misc_teleporter_dest(edict_t *ent);
  void Touch_Item(edict_t *ent, edict_t *other, cplane_t *plane, csurface_t *surf);
-@@ -763,7 +997,11 @@ player_die(edict_t *self, edict_t *inflictor, edict_t *attacker,
+@@ -763,7 +1081,11 @@ player_die(edict_t *self, edict_t *inflictor, edict_t *attacker,
  
  	if (!self->deadflag)
  	{
@@ -521,23 +605,88 @@ index 4f37cbb..1b44226 100644
  		LookAtKiller(self, inflictor, attacker);
  		self->client->ps.pmove.pm_type = PM_DEAD;
  		ClientObituary(self, inflictor, attacker);
-@@ -2123,6 +2361,15 @@ ClientThink(edict_t *ent, usercmd_t *ucmd)
+@@ -2098,6 +2420,10 @@ ClientThink(edict_t *ent, usercmd_t *ucmd)
+ 	gclient_t *client;
+ 	edict_t *other;
+ 	int i, j;
++#ifdef __EMSCRIPTEN__
++	qboolean q2_wearable_auto_fire;
++	vec3_t q2_wearable_auto_fire_angles;
++#endif
+ 
+ 	if (!ent || !ucmd)
+ 	{
+@@ -2106,6 +2432,9 @@ ClientThink(edict_t *ent, usercmd_t *ucmd)
+ 
+ 	level.current_entity = ent;
+ 	client = ent->client;
++#ifdef __EMSCRIPTEN__
++	q2_wearable_auto_fire = false;
++#endif
+ 
+ 	if (level.intermissiontime)
+ 	{
+@@ -2123,6 +2452,10 @@ ClientThink(edict_t *ent, usercmd_t *ucmd)
  
  	pm_passent = ent;
  
 +#ifdef __EMSCRIPTEN__
 +	Q2_WearableUpdateEnemyAssist(ent, ucmd);
-+
-+	if (Q2_WearableShouldAutoFire(ent))
-+	{
-+		ucmd->buttons |= BUTTON_ATTACK;
-+	}
 +#endif
 +
  	if (ent->client->chase_target)
  	{
  		client->resp.cmd_angles[0] = SHORT2ANGLE(ucmd->angles[0]);
-@@ -2371,6 +2618,11 @@ ClientBeginServerFrame(edict_t *ent)
+@@ -2221,6 +2554,14 @@ ClientThink(edict_t *ent, usercmd_t *ucmd)
+ 		{
+ 			VectorCopy(pm.viewangles, client->v_angle);
+ 			VectorCopy(pm.viewangles, client->ps.viewangles);
++
++#ifdef __EMSCRIPTEN__
++			if (Q2_WearableFindAutoFireTarget(ent, q2_wearable_auto_fire_angles))
++			{
++				q2_wearable_auto_fire = true;
++				ucmd->buttons |= BUTTON_ATTACK;
++			}
++#endif
+ 		}
+ 
+ 		gi.linkentity(ent);
+@@ -2285,7 +2626,11 @@ ClientThink(edict_t *ent, usercmd_t *ucmd)
+ 		else if (!client->weapon_thunk)
+ 		{
+ 			client->weapon_thunk = true;
++#ifdef __EMSCRIPTEN__
++			Q2_WearableThinkWeapon(ent, q2_wearable_auto_fire);
++#else
+ 			Think_Weapon(ent);
++#endif
+ 		}
+ 	}
+ 
+@@ -2334,7 +2679,9 @@ void
+ ClientBeginServerFrame(edict_t *ent)
+ {
+ 	gclient_t *client;
++#ifndef __EMSCRIPTEN__
+ 	int buttonMask;
++#endif
+ 
+ 	if (!ent)
+ 	{
+@@ -2359,7 +2706,11 @@ ClientBeginServerFrame(edict_t *ent)
+ 	/* run weapon animations if it hasn't been done by a ucmd_t */
+ 	if (!client->weapon_thunk && !client->resp.spectator)
+ 	{
++#ifdef __EMSCRIPTEN__
++		Q2_WearableThinkWeapon(ent, (client->buttons & BUTTON_ATTACK) != 0);
++#else
+ 		Think_Weapon(ent);
++#endif
+ 	}
+ 	else
+ 	{
+@@ -2371,6 +2722,11 @@ ClientBeginServerFrame(edict_t *ent)
  		/* wait for any button just going down */
  		if (level.time > client->respawn_time)
  		{
@@ -549,7 +698,7 @@ index 4f37cbb..1b44226 100644
  			/* in deathmatch, only wait for attack button */
  			if (deathmatch->value)
  			{
-@@ -2387,6 +2639,7 @@ ClientBeginServerFrame(edict_t *ent)
+@@ -2387,6 +2743,7 @@ ClientBeginServerFrame(edict_t *ent)
  				respawn(ent);
  				client->latched_buttons = 0;
  			}
