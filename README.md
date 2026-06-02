@@ -1,6 +1,8 @@
 # GLQuake II Display
 
-Meta Ray-Ban Display Developer Preview web app shell for a GLQuake II-style WebAssembly build. The app is designed around a Qwasm2/Yamagi Quake II engine build, a reduced user-supplied `baseq2/pak0.pak`, Meta Neural Band gesture input, and W3C `DeviceOrientationEvent` head turning.
+This is an open-source Quake II-compatible engine/demo for Meta Ray-Ban Display. It is designed around a Qwasm2/Yamagi Quake II engine build, a user-supplied `baseq2/pak0.pak`, Meta Neural Band gesture input, and W3C `DeviceOrientationEvent` head turning.
+
+This repo does not include Quake II game data. To play, users must own Quake II and provide their own `baseq2/pak0.pak`.
 
 GLQuake II is heavier than Quake 1. Treat renderer choice, asset size, memory use, frame pacing, and wearable usability as first-order constraints.
 
@@ -22,7 +24,6 @@ var glassesDetected =
 - IMU yaw joystick model with a 50ms tick, 7.5 degree deadzone, and 30 degree max angle.
 - Yaw meter overlay with grey, orange, and blue states.
 - Qwasm2 patch for direct `Q2_AddViewAngles`, wearable action state, C game-module auto-fire, and 3 second auto-respawn.
-- Automatic fallback to the Quake II demo PAK when no user PAK is imported.
 - PAK read/write/reduction helper with silent WAV stub generation.
 - GitHub Pages workflow.
 
@@ -68,9 +69,19 @@ SDL is the open-source Simple DirectMedia Layer. In this build it handles browse
 
 ## Game Data
 
-Quake II data is not committed to this repository. The Pages workflow downloads the Quake II 3.14 demo package from the Yamagi mirror, verifies the package and `baseq2/pak0.pak`, reduces it to the first demo map, converts the retained first-level WAV audio to lower-rate PCM, then publishes both `pak0.pak` and `pak0.pak.gz` with the accompanying license text as generated Pages artifacts. The app loads and decompresses the gzipped demo PAK before Quake II starts when no user PAK has been imported.
+Quake II game data is not included in this repository or provided by this project. To play, you must own Quake II and provide your own legally obtained `baseq2/pak0.pak`.
 
-You can still use your own legally usable `baseq2/pak0.pak`. A manually imported PAK takes precedence over the bundled demo PAK.
+To play from GitHub Pages, add your file path to the end of:
+
+```text
+https://phdev.github.io/glquake2-rayban-display/
+```
+
+The required file is:
+
+```text
+baseq2/pak0.pak
+```
 
 For a wearable build, create a reduced single-level package. Keep one playable map, required textures, required models and animations, HUD/status assets, one default weapon, and a minimal sound set. Remove unused maps, enemies, weapons, cinematics, music, multiplayer extras, and demos.
 
@@ -86,7 +97,7 @@ The wearable reduction keeps first-level weapons, enemies, pickups, decorative m
 npm run reduce:first-map:wearable
 ```
 
-The Pages workflow uses the same reducer through `npm run install:demo-pak`. The default target is `maps/demo1.bsp`; override it with `Q2_DEMO_MAP=maps/demo2.bsp` for local experiments. Set `Q2_DEMO_AUDIO_RATE=0` to keep original WAV quality, or `Q2_DEMO_REDUCE=no` to publish the verified full demo PAK instead.
+The reducer default target is `maps/demo1.bsp`; override it with `Q2_DEMO_MAP=maps/demo2.bsp` for local experiments. Set `Q2_DEMO_AUDIO_RATE=0` to keep original WAV quality.
 
 Quake II asset dependencies are connected. Do a dependency pass first: launch the target map with a full local data set, capture loaded and missing asset paths from the engine log, then reduce only files that are not referenced. Restore required files or add tiny valid placeholders when missing sounds create repeated log noise.
 
@@ -96,7 +107,7 @@ Example reduction command:
 python3 scripts/paktool.py reduce scripts/reduced-pak.example.json
 ```
 
-The hosted app lets you import a reduced PAK into browser storage. The patched Qwasm2 filesystem bridge installs that package at startup; if there is no imported PAK, it installs the bundled demo PAK before the engine starts.
+The hosted app expects your supplied PAK. The patched Qwasm2 filesystem bridge installs that package at startup.
 
 ## Game-Module Changes
 
@@ -138,4 +149,4 @@ npm run check
 
 ## GitHub Pages
 
-The included workflow installs Emscripten, builds GL4ES, builds the patched Qwasm2 engine, installs the verified demo PAK, then deploys `dist/` on pushes to `main`. The public page hosts the shell, open-source engine artifacts, and the free electronically distributable demo data with its license.
+The included workflow installs Emscripten, builds GL4ES, builds the patched Qwasm2 engine, then deploys `dist/` on pushes to `main`. The public page hosts the shell and open-source engine artifacts only. It does not include Quake II game data.
