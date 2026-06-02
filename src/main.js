@@ -13,11 +13,14 @@ let wearableInput = null;
 let loadingProgress = 0;
 let loadingHideTimer = 0;
 let enemyIndicatorTimer = 0;
+let autoFireSensitivityTimer = 0;
 const enemyPresence = {
   left: false,
   right: false
 };
 const runtimeLogs = [];
+const AUTO_FIRE_IMU_SENSITIVITY_SCALE = 0.5;
+const AUTO_FIRE_SENSITIVITY_HOLD_MS = 250;
 
 window.__q2Logs = runtimeLogs;
 
@@ -92,6 +95,7 @@ async function start() {
         refs.statusText.textContent = text;
       },
       onEnemyIndicators: setEnemyIndicators,
+      onAutoFire: handleAutoFireStarted,
       onLog: handleRuntimeLog
     });
 
@@ -173,6 +177,16 @@ function setEnemyIndicators({ left, right }) {
   enemyPresence.right = Boolean(right);
   refs.enemyLeftIndicator.classList.toggle("is-visible", enemyPresence.left);
   refs.enemyRightIndicator.classList.toggle("is-visible", enemyPresence.right);
+}
+
+function handleAutoFireStarted() {
+  wearableInput?.setForward(false);
+  headTracking?.setSensitivityScale(AUTO_FIRE_IMU_SENSITIVITY_SCALE);
+
+  window.clearTimeout(autoFireSensitivityTimer);
+  autoFireSensitivityTimer = window.setTimeout(() => {
+    headTracking?.setSensitivityScale(1);
+  }, AUTO_FIRE_SENSITIVITY_HOLD_MS);
 }
 
 function setLoadingProgress(percent, label) {

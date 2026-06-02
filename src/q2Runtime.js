@@ -4,6 +4,7 @@ const ENGINE_BASE = `${import.meta.env.BASE_URL}wasm/`;
 const BUNDLED_PAK_PATH = "baseq2/pak0.pak";
 const BUNDLED_PAK_URL = `${ENGINE_BASE}${BUNDLED_PAK_PATH}`;
 const BUNDLED_PAK_GZIP_URL = `${BUNDLED_PAK_URL}.gz`;
+const URL_PAK_PARAM = "pak";
 const TIMEOUTS = {
   probe: 15000,
   script: 20000,
@@ -36,7 +37,7 @@ export function createRuntimeConfig() {
         lowLatencyControls: true,
         audioEnabled: false,
         yawSensitivity: 2.4,
-        turnBurstDegrees: 14,
+        turnBurstDegrees: 42,
         headTickMs: 50
       }
     : {
@@ -46,7 +47,7 @@ export function createRuntimeConfig() {
         lowLatencyControls: false,
         audioEnabled: false,
         yawSensitivity: 1.8,
-        turnBurstDegrees: 10,
+        turnBurstDegrees: 36,
         headTickMs: 50
       };
 }
@@ -111,6 +112,7 @@ export async function bootQuake2({
   status,
   config,
   onEnemyIndicators,
+  onAutoFire,
   onProgress,
   onStatus,
   onLog
@@ -144,6 +146,7 @@ export async function bootQuake2({
       config,
       progress,
       onEnemyIndicators,
+      onAutoFire,
       onStatus,
       onLog
     });
@@ -236,6 +239,7 @@ function createModule({
   config,
   progress,
   onEnemyIndicators,
+  onAutoFire,
   onStatus,
   onLog
 }) {
@@ -258,6 +262,9 @@ function createModule({
         left: Boolean(left),
         right: Boolean(right)
       });
+    },
+    q2AutoFireStarted() {
+      onAutoFire?.();
     },
     q2TurnToEnemyYaw(yaw) {
       if (typeof this._Q2_SetViewYaw === "function") {
@@ -422,6 +429,16 @@ async function installPakData(FS, onStatus, options = {}) {
     log: null,
     ...options
   };
+  const urlPakSource = getUrlPakSource();
+  if (urlPakSource) {
+    const urlBytes = await readUrlPakBytes(urlPakSource, onStatus, settings.log, settings.progress);
+    settings.progress?.(64, "Installing PAK");
+    settings.log?.(`Installing URL PAK (${formatByteCount(urlBytes.byteLength)})...`);
+    writePak(FS, urlBytes, "URL", settings);
+    settings.progress?.(68, "PAK ready");
+    return;
+  }
+
   settings.progress?.(50, "Reading data");
   settings.log?.("Reading imported PAK storage...");
   const storedBytes = await readPakBytes();
@@ -450,6 +467,39 @@ async function installPakData(FS, onStatus, options = {}) {
     writePak(FS, bundledBytes, "bundled", settings);
     settings.progress?.(68, "PAK ready");
   }
+}
+
+async function readUrlPakBytes(source, onStatus, log, progress) {
+  progress?.(54, "Fetching PAK");
+  onStatus?.("Loading URL PAK...");
+  log?.(`Fetching URL PAK from ${source.url}...`);
+
+  let bytes = null;
+  try {
+    bytes = await fetchBytes(source.url, { cache: "no-store" });
+  } catch (error) {
+    throw new Error(
+      `Could not fetch PAK URL. The file must be served over HTTP(S) with browser access enabled. ${formatError(error)}`
+    );
+  }
+
+  if (!bytes) {
+    throw new Error(`Could not fetch PAK URL: ${source.url}`);
+  }
+
+  if (isGzipPayload(bytes)) {
+    if (!("DecompressionStream" in globalThis)) {
+      throw new Error("The URL PAK is gzip-compressed, but this browser cannot decompress it");
+    }
+
+    progress?.(60, "Decompressing PAK");
+    onStatus?.("Decompressing URL PAK...");
+    log?.(`Decompressing URL PAK (${formatByteCount(bytes.byteLength)} compressed)...`);
+    return decompressGzip(bytes);
+  }
+
+  progress?.(60, "Loading PAK");
+  return bytes;
 }
 
 async function readBundledPakBytes(onStatus, log, progress) {
@@ -485,14 +535,51 @@ async function readBundledPakBytes(onStatus, log, progress) {
   return bytes;
 }
 
-async function fetchBytes(url) {
-  const response = await fetch(url, { cache: "force-cache" });
+async function fetchBytes(url, options = {}) {
+  const response = await fetch(url, { cache: "force-cache", ...options });
 
   if (!response.ok) {
     return null;
   }
 
   return new Uint8Array(await response.arrayBuffer());
+}
+
+function getUrlPakSource() {
+  const rawValue = new URLSearchParams(window.location.search).get(URL_PAK_PARAM);
+  const value = rawValue?.trim();
+
+  if (!value) {
+    return null;
+  }
+
+  if (looksLikeLocalPath(value)) {
+    throw new Error(
+      "The pak parameter must be an HTTP(S) URL or a path relative to this page, not a local filesystem path"
+    );
+  }
+
+  let url = null;
+  try {
+    url = new URL(value, window.location.href);
+  } catch {
+    throw new Error(`Invalid pak parameter: ${value}`);
+  }
+
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error("The pak parameter must use HTTP or HTTPS");
+  }
+
+  return { url: url.href };
+}
+
+function looksLikeLocalPath(value) {
+  return (
+    value.startsWith("file:") ||
+    value.startsWith("~/") ||
+    /^\/(users|volumes|home|private|tmp)\//i.test(value) ||
+    /^[a-z]:[\\/]/i.test(value)
+  );
 }
 
 async function decompressGzip(bytes) {

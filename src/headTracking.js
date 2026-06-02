@@ -31,6 +31,7 @@ export function createHeadTracking({
   let currentYaw = 0;
   let timer = null;
   let burstRemaining = 0;
+  let sensitivityScale = 1;
 
   function onOrientation(event) {
     if (typeof event.alpha !== "number") {
@@ -107,7 +108,12 @@ export function createHeadTracking({
     }
 
     const normalized = clamp((magnitude - deadzone) / (maxAngle - deadzone), 0, 1);
-    return Math.sign(currentYaw) * normalized * sensitivity;
+    return Math.sign(currentYaw) * normalized * sensitivity * sensitivityScale;
+  }
+
+  function setSensitivityScale(scale) {
+    const nextScale = Number(scale);
+    sensitivityScale = Number.isFinite(nextScale) ? clamp(nextScale, 0.1, 1) : 1;
   }
 
   function drainBurstStep() {
@@ -116,7 +122,7 @@ export function createHeadTracking({
       return 0;
     }
 
-    const step = clamp(burstRemaining, -6, 6);
+    const step = clamp(burstRemaining, -12, 12);
     burstRemaining -= step;
     return step;
   }
@@ -149,6 +155,7 @@ export function createHeadTracking({
     stop,
     recenter,
     addTurnBurst,
+    setSensitivityScale,
     getYaw: () => currentYaw
   };
 }

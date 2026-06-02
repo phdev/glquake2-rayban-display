@@ -302,6 +302,14 @@ index 4f37cbb..de75bee 100644
 +	}
 +});
 +
++EM_JS(void, Q2_WearableNotifyAutoFireStarted, (), {
++	if ((typeof Module !== "undefined") &&
++		(typeof Module.q2AutoFireStarted === "function"))
++	{
++		Module.q2AutoFireStarted();
++	}
++});
++
 +static qboolean
 +Q2_WearableEnemyTarget(edict_t *candidate)
 +{
@@ -647,6 +655,7 @@ index 4f37cbb..de75bee 100644
 +			{
 +				q2_wearable_auto_fire = true;
 +				ucmd->buttons |= BUTTON_ATTACK;
++				Q2_WearableNotifyAutoFireStarted();
 +			}
 +#endif
  		}

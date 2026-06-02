@@ -66,8 +66,7 @@ export function createWearableInput({
     }
 
     if (gesture === "pinchTap") {
-      setAction("forward", !actionState.forward);
-      onForwardChange?.(actionState.forward);
+      setForward(!actionState.forward);
       return;
     }
 
@@ -110,6 +109,17 @@ export function createWearableInput({
     window.setTimeout(() => setAction(action, false), durationMs);
   }
 
+  function setForward(down) {
+    const enabled = Boolean(down);
+
+    if (actionState.forward === enabled) {
+      return;
+    }
+
+    setAction("forward", enabled);
+    onForwardChange?.(enabled);
+  }
+
   function toggleForward() {
     handleGesture("pinchTap", true);
   }
@@ -139,6 +149,7 @@ export function createWearableInput({
     jumpFire,
     recenter,
     turn,
+    setForward,
     getState: () => ({ ...actionState })
   };
 }

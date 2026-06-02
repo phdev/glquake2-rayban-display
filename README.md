@@ -32,10 +32,11 @@ var glassesDetected =
 Meta Neural Band gestures are translated through platform input events into Quake II actions:
 
 - Pinch tap -> toggle perpetual forward
-- Swipe up -> fire
-- Double swipe up -> jump + fire
+- Swipe up -> jump
 - Swipe down -> recenter IMU
-- Swipe left/right -> turn burst
+- Swipe left/right -> large turn burst
+
+Auto-fire engages when a valid enemy target is centered in view. When auto-fire starts, sticky forward is toggled off and IMU yaw sensitivity is halved while firing.
 
 The app intercepts platform navigation-style input in the capture phase so the WebView layer has less opportunity to consume it first. The primary camera path is the exported C function, not browser-generated mouse movement.
 
@@ -71,11 +72,13 @@ SDL is the open-source Simple DirectMedia Layer. In this build it handles browse
 
 Quake II game data is not included in this repository or provided by this project. To play, you must own Quake II and provide your own legally obtained `baseq2/pak0.pak`.
 
-To play from GitHub Pages, add your file path to the end of:
+To play from GitHub Pages, pass an HTTP(S) URL for your legally obtained PAK in the `pak` parameter:
 
 ```text
-https://phdev.github.io/glquake2-rayban-display/
+https://phdev.github.io/glquake2-rayban-display/?pak=https%3A%2F%2Fexample.com%2Fbaseq2%2Fpak0.pak
 ```
+
+The `pak` parameter also accepts a path relative to the hosted page. A local filesystem path such as `/Users/.../pak0.pak` cannot be fetched by a GitHub Pages app; the file must be served over HTTP(S), and a different host must allow browser fetch access.
 
 The required file is:
 
