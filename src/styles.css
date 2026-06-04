@@ -45,6 +45,13 @@ body {
   outline: none;
   background: #050505;
   image-rendering: auto;
+  --q2-display-brightness: 1;
+  --q2-display-contrast: 1;
+  --q2-display-saturate: 1;
+  filter:
+    brightness(var(--q2-display-brightness))
+    contrast(var(--q2-display-contrast))
+    saturate(var(--q2-display-saturate));
 }
 
 .enemy-indicator {

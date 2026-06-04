@@ -45,6 +45,11 @@ export function createRuntimeConfig() {
         inputMode: "wearable",
         lowLatencyControls: true,
         audioEnabled: false,
+        displayBrightness: 1.3,
+        displayContrast: 1.08,
+        displaySaturate: 1.05,
+        gl1Intensity: 1.8,
+        gl3Intensity: 2.4,
         yawSensitivity: 2.4,
         turnBurstDegrees: 42,
         headTickMs: 50
@@ -55,10 +60,26 @@ export function createRuntimeConfig() {
         inputMode: "desktop",
         lowLatencyControls: false,
         audioEnabled: false,
+        displayBrightness: 1,
+        displayContrast: 1,
+        displaySaturate: 1,
+        gl1Intensity: 1.5,
+        gl3Intensity: 2,
         yawSensitivity: 1.8,
         turnBurstDegrees: 36,
         headTickMs: 50
       };
+}
+
+function applyDisplayTuning(canvas, config) {
+  canvas.style.setProperty("--q2-display-brightness", String(getNumericConfig(config.displayBrightness, 1)));
+  canvas.style.setProperty("--q2-display-contrast", String(getNumericConfig(config.displayContrast, 1)));
+  canvas.style.setProperty("--q2-display-saturate", String(getNumericConfig(config.displaySaturate, 1)));
+}
+
+function getNumericConfig(value, fallback) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
 }
 
 export async function probeEngineArtifacts() {
@@ -145,6 +166,7 @@ export async function bootQuake2({
     canvas.width = config.width;
     canvas.height = config.height;
     canvas.style.aspectRatio = `${config.width} / ${config.height}`;
+    applyDisplayTuning(canvas, config);
     log(`Canvas configured at ${config.width}x${config.height} for ${config.inputMode}`);
 
     progress(16, "Loading engine");
@@ -310,8 +332,10 @@ function createModule({
     },
     winResized() {},
     setGamma(value) {
-      const gamma = Number(Number(value).toFixed(2));
-      canvas.style.filter = gamma < 0 ? "" : `brightness(${gamma * 2})`;
+      const gamma = getNumericConfig(value, -1);
+      const displayBrightness = getNumericConfig(config.displayBrightness, 1);
+      const gammaBrightness = gamma < 0 ? 1 : gamma * 2;
+      canvas.style.setProperty("--q2-display-brightness", String(displayBrightness * gammaBrightness));
     },
     captureMouse() {},
     q2InstallPendingData: async (FS) => {
@@ -344,6 +368,8 @@ function buildArguments(config) {
     "+set", "vid_width", String(config.width),
     "+set", "vid_height", String(config.height),
     "+set", "gl_msaa_samples", "0",
+    "+set", "gl1_intensity", String(config.gl1Intensity),
+    "+set", "gl3_intensity", String(config.gl3Intensity),
     "+set", "s_initsound", config.audioEnabled ? "1" : "0",
     "+set", "skill", "0",
     "+set", "cl_run", "0",
@@ -400,9 +426,9 @@ function buildWasmConfig(config) {
     "set r_mode \"-1\"",
     "set r_vsync \"0\"",
     "set gl_texturemode \"GL_LINEAR_MIPMAP_LINEAR\"",
-    "set gl1_intensity \"1.5\"",
+    `set gl1_intensity "${config.gl1Intensity}"`,
     "set gl1_overbrightbits \"1\"",
-    "set gl3_intensity \"2\"",
+    `set gl3_intensity "${config.gl3Intensity}"`,
     "set r_consolescale \"1\"",
     "set r_hudscale \"1\"",
     "set r_menuscale \"1\"",
