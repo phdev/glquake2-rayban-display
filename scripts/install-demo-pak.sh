@@ -29,7 +29,9 @@ md5_file() {
 mkdir -p "$BUILD_DIR" "$PUBLIC_BASEQ2"
 
 if [[ ! -f "$DEMO_EXE" ]]; then
-  curl -fL --retry 3 -o "$DEMO_EXE" "$DEMO_URL"
+  curl -fL --http1.1 --retry 5 --retry-all-errors --retry-delay 3 \
+    --connect-timeout 20 --max-time 180 \
+    -o "$DEMO_EXE" "$DEMO_URL"
 fi
 
 ACTUAL_DEMO_MD5="$(md5_file "$DEMO_EXE")"
