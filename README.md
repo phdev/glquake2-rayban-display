@@ -107,24 +107,3 @@ void Q2_AddViewAngles(float dyaw, float dpitch);
 ```
 
 JavaScript reads head orientation, calculates a yaw step, and calls the engine directly.
-
-## Web App
-
-Install dependencies and run locally:
-
-```bash
-npm install
-npm run dev
-```
-
-Build the Pages artifact:
-
-```bash
-npm run build
-```
-
-Validate the web build and PAK tooling:
-
-```bash
-npm run check
-```
