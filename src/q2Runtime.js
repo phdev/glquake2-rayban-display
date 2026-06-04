@@ -13,6 +13,7 @@ const TIMEOUTS = {
 };
 const PAK_FETCH_STALL_TIMEOUT_MS = 20000;
 const PAK_FETCH_RETRY_DELAY_MS = 750;
+const PAK_MANIFEST_TIMEOUT_MS = 8000;
 const REQUIRED_ENGINE_FILES = [
   "quake2.js",
   "quake2.wasm",
@@ -25,6 +26,7 @@ const GENERATED_FILE_MAP = new Map([
   ["index.wasm", "quake2.wasm"],
   ["index.data", "quake2.data"]
 ]);
+let installedUrlPakHref = null;
 
 export function createRuntimeConfig() {
   var glassesDetected =
@@ -438,10 +440,18 @@ async function installPakData(FS, onStatus, options = {}) {
   };
   const urlPakSource = getUrlPakSource();
   if (urlPakSource) {
+    if (installedUrlPakHref === urlPakSource.url && fileExists(FS, "/baseq2/pak0.pak")) {
+      settings.progress?.(68, "PAK ready");
+      onStatus?.("URL PAK ready");
+      settings.log?.("URL PAK is already mounted");
+      return;
+    }
+
     const urlBytes = await readUrlPakBytes(urlPakSource, onStatus, settings.log, settings.progress);
     settings.progress?.(64, "Installing PAK");
     settings.log?.(`Installing URL PAK (${formatByteCount(urlBytes.byteLength)})...`);
     writePak(FS, urlBytes, "URL", settings);
+    installedUrlPakHref = urlPakSource.url;
     settings.progress?.(68, "PAK ready");
     return;
   }
@@ -482,21 +492,23 @@ async function readUrlPakBytes(source, onStatus, log, progress) {
 
   for (const candidate of candidates) {
     progress?.(54, "Fetching PAK");
-    onStatus?.(candidate.compressed ? "Loading compressed URL PAK..." : "Loading URL PAK...");
-    log?.(`Fetching ${candidate.compressed ? "compressed " : ""}URL PAK from ${candidate.url}...`);
+    onStatus?.(candidate.status);
+    log?.(candidate.message);
 
     let bytes = null;
     try {
-      bytes = await fetchBytes(candidate.url, {
-        cache: "no-store",
-        progress,
-        progressBase: 54,
-        progressSpan: 6,
-        progressLabel: candidate.compressed ? "Fetching compressed PAK" : "Fetching PAK"
-      });
+      bytes = candidate.kind === "chunks"
+        ? await fetchChunkedBytes(candidate, progress, log)
+        : await fetchBytes(candidate.url, {
+            cache: "no-store",
+            progress,
+            progressBase: 54,
+            progressSpan: 6,
+            progressLabel: candidate.compressed ? "Fetching compressed PAK" : "Fetching PAK"
+          });
     } catch (error) {
       lastError = error;
-      log?.(`URL PAK fetch failed from ${candidate.url}: ${formatError(error)}`);
+      log?.(`URL PAK fetch failed from ${candidate.url || candidate.manifestUrl}: ${formatError(error)}`);
       if (!candidate.optional) {
         break;
       }
@@ -509,7 +521,7 @@ async function readUrlPakBytes(source, onStatus, log, progress) {
       if (!candidate.optional) {
         break;
       }
-      log?.("Compressed URL PAK was not available; trying raw URL...");
+      log?.(`${candidate.fallbackName} was not available; trying next PAK source...`);
       await delay(PAK_FETCH_RETRY_DELAY_MS);
       continue;
     }
@@ -558,7 +570,45 @@ async function readUrlPakBytes(source, onStatus, log, progress) {
 }
 
 async function readBundledPakBytes(onStatus, log, progress) {
+  if (isCompactWebViewRuntime()) {
+    progress?.(54, "Fetching PAK");
+    onStatus?.("Loading chunked demo PAK...");
+    log?.("Fetching chunked demo PAK...");
+    const chunked = await fetchChunkedBytes({
+      manifestUrl: appendPathSuffix(BUNDLED_PAK_URL, ".manifest.json"),
+      progressLabel: "Fetching demo PAK chunks"
+    }, progress, log);
+
+    if (chunked) {
+      progress?.(60, "Loading PAK");
+      return chunked;
+    }
+
+    log?.("Chunked demo PAK was not found; trying compressed demo PAK...");
+  }
+
   if ("DecompressionStream" in globalThis) {
+    progress?.(54, "Fetching PAK");
+    onStatus?.("Loading compressed chunked demo PAK...");
+    log?.("Fetching compressed chunked demo PAK...");
+    const chunkedCompressed = await fetchChunkedBytes({
+      manifestUrl: appendPathSuffix(BUNDLED_PAK_GZIP_URL, ".manifest.json"),
+      progressLabel: "Fetching compressed demo PAK chunks"
+    }, progress, log);
+
+    if (chunkedCompressed && isGzipPayload(chunkedCompressed)) {
+      progress?.(60, "Decompressing PAK");
+      onStatus?.("Decompressing demo PAK...");
+      log?.(`Decompressing demo PAK (${formatByteCount(chunkedCompressed.byteLength)} compressed)...`);
+      return decompressGzip(chunkedCompressed);
+    }
+
+    if (chunkedCompressed) {
+      progress?.(60, "Loading PAK");
+      log?.(`Using chunked browser-decoded demo PAK (${formatByteCount(chunkedCompressed.byteLength)})...`);
+      return chunkedCompressed;
+    }
+
     progress?.(54, "Fetching PAK");
     onStatus?.("Loading compressed demo PAK...");
     log?.("Fetching compressed demo PAK...");
@@ -588,6 +638,135 @@ async function readBundledPakBytes(onStatus, log, progress) {
   }
 
   return bytes;
+}
+
+async function fetchChunkedBytes(candidate, progress, log) {
+  const manifest = await fetchChunkManifest(candidate.manifestUrl);
+  if (!manifest) {
+    return null;
+  }
+
+  const chunks = normalizeChunkManifest(manifest, candidate.manifestUrl);
+  if (!chunks.length) {
+    throw new Error(`Chunk manifest did not include chunks: ${candidate.manifestUrl}`);
+  }
+
+  const totalSize = Number(manifest.totalSize || 0);
+  const buffers = [];
+  let loaded = 0;
+
+  log?.(`Fetching ${chunks.length} PAK chunks from ${candidate.manifestUrl}...`);
+
+  for (let index = 0; index < chunks.length; index += 1) {
+    const chunk = chunks[index];
+    const expectedSize = Number(chunk.size || 0);
+    const base = totalSize > 0 ? 54 + 6 * (loaded / totalSize) : 54;
+    const span = totalSize > 0 && expectedSize > 0
+      ? 6 * (expectedSize / totalSize)
+      : 6 / chunks.length;
+    const label = `Fetching chunk ${index + 1}/${chunks.length}`;
+    const bytes = await fetchBytesWithRetries(chunk.url, {
+      cache: "no-store",
+      progress,
+      progressBase: base,
+      progressSpan: span,
+      progressLabel: label
+    });
+
+    if (!bytes) {
+      throw new Error(`Missing PAK chunk ${index + 1}/${chunks.length}`);
+    }
+
+    if (expectedSize > 0 && bytes.byteLength !== expectedSize) {
+      throw new Error(
+        `PAK chunk ${index + 1}/${chunks.length} had ${formatByteCount(bytes.byteLength)}, expected ${formatByteCount(expectedSize)}`
+      );
+    }
+
+    buffers.push(bytes);
+    loaded += bytes.byteLength;
+    progress?.(
+      54 + 6 * Math.min(totalSize > 0 ? loaded / totalSize : (index + 1) / chunks.length, 1),
+      `${candidate.progressLabel} ${formatByteCount(loaded)}${totalSize > 0 ? `/${formatByteCount(totalSize)}` : ""}`
+    );
+  }
+
+  if (totalSize > 0 && loaded !== totalSize) {
+    throw new Error(`Chunked PAK had ${formatByteCount(loaded)}, expected ${formatByteCount(totalSize)}`);
+  }
+
+  const bytes = new Uint8Array(loaded);
+  let offset = 0;
+  for (const buffer of buffers) {
+    bytes.set(buffer, offset);
+    offset += buffer.byteLength;
+  }
+
+  return bytes;
+}
+
+async function fetchChunkManifest(url) {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), PAK_MANIFEST_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(url, {
+      cache: "no-store",
+      signal: controller.signal
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    return response.json();
+  } catch {
+    return null;
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
+function normalizeChunkManifest(manifest, manifestUrl) {
+  if (!Array.isArray(manifest.chunks)) {
+    return [];
+  }
+
+  return manifest.chunks
+    .map((chunk) => {
+      const path = typeof chunk === "string" ? chunk : chunk.path;
+      if (!path) {
+        return null;
+      }
+
+      return {
+        url: new URL(path, manifestUrl).href,
+        size: typeof chunk === "string" ? 0 : Number(chunk.size || 0)
+      };
+    })
+    .filter(Boolean);
+}
+
+async function fetchBytesWithRetries(url, options) {
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      const bytes = await fetchBytes(url, options);
+      if (bytes) {
+        return bytes;
+      }
+      lastError = new Error(`No response from ${url}`);
+    } catch (error) {
+      lastError = error;
+    }
+
+    if (attempt < 3) {
+      await delay(PAK_FETCH_RETRY_DELAY_MS * attempt);
+    }
+  }
+
+  throw lastError;
 }
 
 async function fetchBytes(url, options = {}) {
@@ -691,24 +870,95 @@ async function fetchBytes(url, options = {}) {
 
 function getUrlPakCandidates(url) {
   const candidates = [];
+  const compactRuntime = isCompactWebViewRuntime();
+  const knownDemoPak = isKnownDemoPakUrl(url);
+
+  if (!/\.gz([?#]|$)/i.test(url)) {
+    const rawManifestUrl = appendPathSuffix(url, ".manifest.json");
+    if (compactRuntime) {
+      candidates.push({
+        kind: "chunks",
+        url,
+        manifestUrl: rawManifestUrl,
+        compressed: false,
+        optional: true,
+        status: "Loading chunked URL PAK...",
+        message: `Fetching chunked URL PAK from ${rawManifestUrl}...`,
+        fallbackName: "Chunked URL PAK",
+        progressLabel: "Fetching chunked PAK"
+      });
+
+      if (knownDemoPak) {
+        candidates.push({
+          kind: "chunks",
+          url: BUNDLED_PAK_URL,
+          manifestUrl: appendPathSuffix(BUNDLED_PAK_URL, ".manifest.json"),
+          compressed: false,
+          optional: true,
+          status: "Loading display-optimized chunked PAK...",
+          message: `Fetching display-optimized chunked PAK from ${appendPathSuffix(BUNDLED_PAK_URL, ".manifest.json")}...`,
+          fallbackName: "Display-optimized chunked PAK",
+          progressLabel: "Fetching display PAK chunks"
+        });
+      }
+    }
+  }
 
   if ("DecompressionStream" in globalThis && !/\.gz([?#]|$)/i.test(url)) {
-    const gzipUrl = new URL(url);
-    gzipUrl.pathname = `${gzipUrl.pathname}.gz`;
+    const gzipUrl = appendPathSuffix(url, ".gz");
+    const gzipManifestUrl = appendPathSuffix(gzipUrl, ".manifest.json");
     candidates.push({
-      url: gzipUrl.href,
+      kind: "chunks",
+      url: gzipUrl,
+      manifestUrl: gzipManifestUrl,
       compressed: true,
-      optional: true
+      optional: true,
+      status: "Loading compressed chunked URL PAK...",
+      message: `Fetching compressed chunked URL PAK from ${gzipManifestUrl}...`,
+      fallbackName: "Compressed chunked URL PAK",
+      progressLabel: "Fetching compressed chunks"
+    });
+    candidates.push({
+      kind: "file",
+      url: gzipUrl,
+      compressed: true,
+      optional: true,
+      status: "Loading compressed URL PAK...",
+      message: `Fetching compressed URL PAK from ${gzipUrl}...`,
+      fallbackName: "Compressed URL PAK"
     });
   }
 
   candidates.push({
+    kind: "file",
     url,
     compressed: /\.gz([?#]|$)/i.test(url),
-    optional: false
+    optional: false,
+    status: /\.gz([?#]|$)/i.test(url) ? "Loading compressed URL PAK..." : "Loading URL PAK...",
+    message: `Fetching URL PAK from ${url}...`,
+    fallbackName: "URL PAK"
   });
 
   return candidates;
+}
+
+function appendPathSuffix(url, suffix) {
+  const nextUrl = new URL(url, window.location.href);
+  nextUrl.pathname = `${nextUrl.pathname}${suffix}`;
+  return nextUrl.href;
+}
+
+function isCompactWebViewRuntime() {
+  return /Android.*wv/.test(navigator.userAgent) || screen.width <= 640;
+}
+
+function isKnownDemoPakUrl(url) {
+  try {
+    const parsed = new URL(url);
+    return parsed.hostname === "glquake2-pak0.pages.dev" && parsed.pathname.endsWith("/pak0.pak");
+  } catch {
+    return false;
+  }
 }
 
 function delay(ms) {

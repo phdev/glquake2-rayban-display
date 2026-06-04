@@ -17,6 +17,7 @@ Q2_DEMO_MAP="${Q2_DEMO_MAP:-maps/demo1.bsp}"
 Q2_DEMO_AUDIO_RATE="${Q2_DEMO_AUDIO_RATE:-10000}"
 Q2_DEMO_AUDIO_WIDTH="${Q2_DEMO_AUDIO_WIDTH:-1}"
 Q2_DEMO_WRITE_GZIP="${Q2_DEMO_WRITE_GZIP:-yes}"
+Q2_DEMO_CHUNK_SIZE="${Q2_DEMO_CHUNK_SIZE:-262144}"
 
 md5_file() {
   if command -v md5sum >/dev/null 2>&1; then
@@ -65,6 +66,49 @@ fi
 if [[ "$Q2_DEMO_WRITE_GZIP" == "yes" ]]; then
   gzip -c -9 "$PUBLIC_BASEQ2/pak0.pak" > "$PUBLIC_BASEQ2/pak0.pak.gz"
 fi
+
+python3 - "$PUBLIC_BASEQ2/pak0.pak" "$Q2_DEMO_CHUNK_SIZE" <<'PY'
+import hashlib
+import json
+import math
+import sys
+from pathlib import Path
+
+pak_path = Path(sys.argv[1])
+chunk_size = int(sys.argv[2])
+sources = [pak_path]
+gzip_path = Path(f"{pak_path}.gz")
+
+if gzip_path.exists():
+    sources.append(gzip_path)
+
+for source in sources:
+    data = source.read_bytes()
+    chunks = []
+    count = math.ceil(len(data) / chunk_size)
+
+    for index in range(count):
+        chunk = data[index * chunk_size:(index + 1) * chunk_size]
+        chunk_name = f"{source.name}.part{index:03d}"
+        (source.parent / chunk_name).write_bytes(chunk)
+        chunks.append({
+            "path": chunk_name,
+            "size": len(chunk),
+            "sha256": hashlib.sha256(chunk).hexdigest(),
+        })
+
+    manifest = {
+        "format": "q2-pak-chunks-v1",
+        "name": source.name,
+        "encoding": "gzip" if source.suffix == ".gz" else "identity",
+        "chunkSize": chunk_size,
+        "totalSize": len(data),
+        "sha256": hashlib.sha256(data).hexdigest(),
+        "chunks": chunks,
+    }
+
+    (source.parent / f"{source.name}.manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+PY
 
 install -m 0644 "$LICENSE_PATH" "$PUBLIC_BASEQ2/license.txt"
 
