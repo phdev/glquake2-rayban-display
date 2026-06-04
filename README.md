@@ -35,18 +35,48 @@ Recommended target:
 
 Do not delete by folder or filename alone. Quake II asset dependencies are connected, so run a dependency pass first: launch the target map with the full local data set, capture loaded and missing asset paths from the engine log, then remove only files that are not referenced. Restore required files or add tiny valid placeholders when missing sounds create repeated log noise.
 
-This repo includes reducer scripts for the first demo map:
+Use this example prompt with a local LLM or coding agent that can run commands on your machine. Do not paste or upload copyrighted PAK contents into a third-party chat service.
 
-```bash
-npm run reduce:first-map:wearable
-```
+```text
+I own Quake II and have a legally obtained PAK at:
 
-The wearable reduction keeps first-level weapons, enemies, pickups, decorative map entities, sprite effects, and audio. It preserves audio content by converting retained WAVs to 10 kHz 8-bit mono PCM, then relies on gzip transfer compression.
+INPUT_PAK=/absolute/path/to/baseq2/pak0.pak
 
-For custom experiments, use the lower-level reducer config:
+Optimize this PAK for the GLQuake II Meta Ray-Ban Display web app.
 
-```bash
-python3 scripts/paktool.py reduce scripts/reduced-pak.example.json
+Goal:
+- Create a reduced first-level PAK for maps/demo1.bsp.
+- Minimize download size while preserving everything needed for a correct first-level experience.
+- Output:
+  - /absolute/path/to/output/baseq2/pak0.pak
+  - /absolute/path/to/output/baseq2/pak0.pak.gz
+  - a short report with original size, reduced size, gzip size, retained file count, removed file count, and any missing-file fixes.
+
+Rules:
+- Do not include Quake II data in source control.
+- Do not remove weapons, enemies, pickups, decorative map entities, sprite effects, HUD/status assets, player assets, or audio that are used in the first level.
+- Do not delete assets only by folder or filename.
+- Preserve all textures, skybox files, models, animations, sounds, sprites, images, and config files referenced by maps/demo1.bsp or by entities/classes used in that map.
+- If a missing sound causes runtime spam, restore the real retained sound when it belongs to the first level. Use tiny valid placeholders only for non-gameplay paths that are required but not meaningfully used.
+- Convert retained WAV audio to 10 kHz 8-bit mono PCM where possible, but keep it valid WAV audio.
+- Gzip the final PAK for transfer.
+
+Suggested steps:
+1. Work in a temporary directory and leave INPUT_PAK unchanged.
+2. Use this repository's PAK tools where possible.
+3. Inventory INPUT_PAK and parse maps/demo1.bsp for referenced textures, sky, entity classes, target sounds, and speaker sounds.
+4. Build a dependency keep-list for first-level monsters, items, weapons, effects, HUD/status assets, player assets, and all referenced audio.
+5. Create a reduced PAK containing only the keep-list.
+6. Convert retained WAVs to lower-rate PCM and repack.
+7. Run a validation pass that checks:
+   - the output starts with the PACK magic,
+   - maps/demo1.bsp exists,
+   - pics/colormap.pcx and required HUD/status images exist,
+   - no referenced first-level asset is missing.
+8. If the engine can be launched locally, boot the app with the reduced PAK and inspect logs for missing files. Restore any first-level asset that is missing.
+9. Write pak0.pak.gz and report final sizes.
+
+Prefer commands that can be rerun, and show the exact commands used.
 ```
 
 ## Controls
@@ -67,7 +97,6 @@ The app intercepts platform navigation-style input in the capture phase so the W
 Gameplay changes live in the Quake II C game module:
 
 - Auto-fire traces forward from the player view and injects attack when a valid hostile target is centered.
-- Auto-respawn waits 3 seconds after death, then triggers respawn without requiring manual menu input.
 - Wearable comfort defaults slow the forward movement feel and avoid rapid continuous turning.
 
 The client input patch exports:
