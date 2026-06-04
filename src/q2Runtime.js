@@ -11,6 +11,8 @@ const TIMEOUTS = {
   runtime: 30000,
   pak: 90000
 };
+const PAK_FETCH_STALL_TIMEOUT_MS = 20000;
+const PAK_FETCH_RETRY_DELAY_MS = 750;
 const REQUIRED_ENGINE_FILES = [
   "quake2.js",
   "quake2.wasm",
@@ -475,36 +477,84 @@ async function installPakData(FS, onStatus, options = {}) {
 }
 
 async function readUrlPakBytes(source, onStatus, log, progress) {
-  progress?.(54, "Fetching PAK");
-  onStatus?.("Loading URL PAK...");
-  log?.(`Fetching URL PAK from ${source.url}...`);
+  const candidates = getUrlPakCandidates(source.url);
+  let lastError = null;
 
-  let bytes = null;
-  try {
-    bytes = await fetchBytes(source.url, { cache: "no-store" });
-  } catch (error) {
-    throw new Error(
-      `Could not fetch PAK URL. The file must be served over HTTP(S) with browser access enabled. ${formatError(error)}`
-    );
-  }
+  for (const candidate of candidates) {
+    progress?.(54, "Fetching PAK");
+    onStatus?.(candidate.compressed ? "Loading compressed URL PAK..." : "Loading URL PAK...");
+    log?.(`Fetching ${candidate.compressed ? "compressed " : ""}URL PAK from ${candidate.url}...`);
 
-  if (!bytes) {
-    throw new Error(`Could not fetch PAK URL: ${source.url}`);
-  }
-
-  if (isGzipPayload(bytes)) {
-    if (!("DecompressionStream" in globalThis)) {
-      throw new Error("The URL PAK is gzip-compressed, but this browser cannot decompress it");
+    let bytes = null;
+    try {
+      bytes = await fetchBytes(candidate.url, {
+        cache: "no-store",
+        progress,
+        progressBase: 54,
+        progressSpan: 6,
+        progressLabel: candidate.compressed ? "Fetching compressed PAK" : "Fetching PAK"
+      });
+    } catch (error) {
+      lastError = error;
+      log?.(`URL PAK fetch failed from ${candidate.url}: ${formatError(error)}`);
+      if (!candidate.optional) {
+        break;
+      }
+      await delay(PAK_FETCH_RETRY_DELAY_MS);
+      continue;
     }
 
-    progress?.(60, "Decompressing PAK");
-    onStatus?.("Decompressing URL PAK...");
-    log?.(`Decompressing URL PAK (${formatByteCount(bytes.byteLength)} compressed)...`);
-    return decompressGzip(bytes);
+    if (!bytes) {
+      lastError = new Error(`No PAK response from ${candidate.url}`);
+      if (!candidate.optional) {
+        break;
+      }
+      log?.("Compressed URL PAK was not available; trying raw URL...");
+      await delay(PAK_FETCH_RETRY_DELAY_MS);
+      continue;
+    }
+
+    if (isGzipPayload(bytes)) {
+      if (!("DecompressionStream" in globalThis)) {
+        lastError = new Error("This browser cannot decompress gzip PAK files");
+        if (!candidate.optional) {
+          break;
+        }
+        log?.("Browser cannot decompress the compressed URL PAK; trying raw URL...");
+        continue;
+      }
+
+      progress?.(60, "Decompressing PAK");
+      onStatus?.("Decompressing URL PAK...");
+      log?.(`Decompressing URL PAK (${formatByteCount(bytes.byteLength)} compressed)...`);
+      const decompressed = await decompressGzip(bytes);
+      if (isPakPayload(decompressed)) {
+        return decompressed;
+      }
+
+      lastError = new Error("Decompressed URL data is not a valid Quake II PAK");
+      if (!candidate.optional) {
+        break;
+      }
+      continue;
+    }
+
+    if (isPakPayload(bytes)) {
+      progress?.(60, "Loading PAK");
+      return bytes;
+    }
+
+    lastError = new Error(`${candidate.url} did not return Quake II PAK data`);
+    if (!candidate.optional) {
+      break;
+    }
+    log?.("Compressed URL PAK candidate was not valid PAK data; trying raw URL...");
+    await delay(PAK_FETCH_RETRY_DELAY_MS);
   }
 
-  progress?.(60, "Loading PAK");
-  return bytes;
+  throw new Error(
+    `Could not fetch PAK URL. The file must be served over HTTP(S) with browser access enabled. ${formatError(lastError)}`
+  );
 }
 
 async function readBundledPakBytes(onStatus, log, progress) {
@@ -541,13 +591,128 @@ async function readBundledPakBytes(onStatus, log, progress) {
 }
 
 async function fetchBytes(url, options = {}) {
-  const response = await fetch(url, { cache: "force-cache", ...options });
+  const {
+    timeoutMs = TIMEOUTS.pak,
+    stallTimeoutMs = PAK_FETCH_STALL_TIMEOUT_MS,
+    progress = null,
+    progressBase = 54,
+    progressSpan = 6,
+    progressLabel = "Fetching",
+    ...fetchOptions
+  } = options;
+  const controller = new AbortController();
+  let timeoutReason = "";
+  let overallTimer = null;
+  let stallTimer = null;
 
-  if (!response.ok) {
-    return null;
+  const abortWith = (reason) => {
+    timeoutReason = reason;
+    controller.abort();
+  };
+
+  const resetStallTimer = () => {
+    if (!stallTimeoutMs) {
+      return;
+    }
+    window.clearTimeout(stallTimer);
+    stallTimer = window.setTimeout(
+      () => abortWith(`${progressLabel} stalled for ${Math.round(stallTimeoutMs / 1000)}s`),
+      stallTimeoutMs
+    );
+  };
+
+  overallTimer = window.setTimeout(
+    () => abortWith(`${progressLabel} timed out after ${Math.round(timeoutMs / 1000)}s`),
+    timeoutMs
+  );
+
+  try {
+    resetStallTimer();
+    const response = await fetch(url, {
+      cache: "force-cache",
+      ...fetchOptions,
+      signal: controller.signal
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const total = Number(response.headers.get("content-length") || 0);
+    if (!response.body?.getReader) {
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      progress?.(progressBase + progressSpan, progressLabel);
+      return bytes;
+    }
+
+    const reader = response.body.getReader();
+    const chunks = [];
+    let loaded = 0;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      resetStallTimer();
+      if (done) {
+        break;
+      }
+
+      chunks.push(value);
+      loaded += value.byteLength;
+      if (total > 0) {
+        const percent = progressBase + progressSpan * Math.min(loaded / total, 1);
+        progress?.(
+          percent,
+          `${progressLabel} ${formatByteCount(loaded)}/${formatByteCount(total)}`
+        );
+      } else {
+        progress?.(progressBase, `${progressLabel} ${formatByteCount(loaded)}`);
+      }
+    }
+
+    const bytes = new Uint8Array(loaded);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+
+    progress?.(progressBase + progressSpan, progressLabel);
+    return bytes;
+  } catch (error) {
+    if (timeoutReason) {
+      throw new Error(timeoutReason);
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(overallTimer);
+    window.clearTimeout(stallTimer);
+  }
+}
+
+function getUrlPakCandidates(url) {
+  const candidates = [];
+
+  if ("DecompressionStream" in globalThis && !/\.gz([?#]|$)/i.test(url)) {
+    const gzipUrl = new URL(url);
+    gzipUrl.pathname = `${gzipUrl.pathname}.gz`;
+    candidates.push({
+      url: gzipUrl.href,
+      compressed: true,
+      optional: true
+    });
   }
 
-  return new Uint8Array(await response.arrayBuffer());
+  candidates.push({
+    url,
+    compressed: /\.gz([?#]|$)/i.test(url),
+    optional: false
+  });
+
+  return candidates;
+}
+
+function delay(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
 function getUrlPakSource() {
