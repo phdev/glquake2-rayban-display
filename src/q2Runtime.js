@@ -165,20 +165,25 @@ export async function bootQuake2({
     progress(42, "Runtime ready");
     log("Runtime initialized");
 
-    progress(48, "Loading data");
-    log("Installing PAK data...");
-    await withTimeout(
-      installPakData(module.FS, onStatus, {
-        writablePath: false,
-        progress,
-        log
-      }),
-      TIMEOUTS.pak,
-      "PAK install"
-    );
+    if (isRuntimeFS(module.FS)) {
+      progress(48, "Loading data");
+      log("Installing PAK data...");
+      await withTimeout(
+        installPakData(module.FS, onStatus, {
+          writablePath: false,
+          progress,
+          log
+        }),
+        TIMEOUTS.pak,
+        "PAK install"
+      );
 
-    progress(72, "Configuring");
-    installRuntimeConfig(module.FS, config, log);
+      progress(72, "Configuring");
+      installRuntimeConfig(module.FS, config, log);
+    } else {
+      progress(72, "Configuring");
+      log("Runtime filesystem is not exposed yet; deferring PAK install");
+    }
 
     if (typeof module.callMain !== "function") {
       throw new Error("Quake II runtime did not expose callMain");
@@ -698,6 +703,15 @@ function mkdirTree(FS, path) {
       }
     }
   }
+}
+
+function isRuntimeFS(FS) {
+  return Boolean(
+    FS &&
+    typeof FS.mkdir === "function" &&
+    typeof FS.writeFile === "function" &&
+    typeof FS.analyzePath === "function"
+  );
 }
 
 function appendOutput(output, text) {
