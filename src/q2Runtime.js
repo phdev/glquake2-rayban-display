@@ -1,4 +1,9 @@
-import { readPakBytes } from "./storage.js";
+import {
+  clearCachedUrlPak,
+  readCachedUrlPak,
+  readPakBytes,
+  saveCachedUrlPak
+} from "./storage.js";
 
 const ENGINE_BASE = `${import.meta.env.BASE_URL}wasm/`;
 const BUNDLED_PAK_PATH = "baseq2/pak0.pak";
@@ -447,11 +452,27 @@ async function installPakData(FS, onStatus, options = {}) {
       return;
     }
 
+    const cachedUrlBytes = await readCachedUrlPakBytes(
+      urlPakSource.url,
+      onStatus,
+      settings.log,
+      settings.progress
+    );
+    if (cachedUrlBytes) {
+      settings.progress?.(64, "Installing PAK");
+      settings.log?.(`Installing cached URL PAK (${formatByteCount(cachedUrlBytes.byteLength)})...`);
+      writePak(FS, cachedUrlBytes, "cached URL", settings);
+      installedUrlPakHref = urlPakSource.url;
+      settings.progress?.(68, "PAK ready");
+      return;
+    }
+
     const urlBytes = await readUrlPakBytes(urlPakSource, onStatus, settings.log, settings.progress);
     settings.progress?.(64, "Installing PAK");
     settings.log?.(`Installing URL PAK (${formatByteCount(urlBytes.byteLength)})...`);
     writePak(FS, urlBytes, "URL", settings);
     installedUrlPakHref = urlPakSource.url;
+    cacheUrlPakBytes(urlPakSource.url, urlBytes, settings.log);
     settings.progress?.(68, "PAK ready");
     return;
   }
@@ -484,6 +505,58 @@ async function installPakData(FS, onStatus, options = {}) {
     writePak(FS, bundledBytes, "bundled", settings);
     settings.progress?.(68, "PAK ready");
   }
+}
+
+async function readCachedUrlPakBytes(sourceUrl, onStatus, log, progress) {
+  progress?.(50, "Checking cache");
+  onStatus?.("Checking cached URL PAK...");
+
+  let bytes = null;
+  try {
+    bytes = await readCachedUrlPak(sourceUrl);
+  } catch (error) {
+    log?.(`Could not read cached URL PAK: ${formatError(error)}`);
+    return null;
+  }
+
+  if (!bytes) {
+    return null;
+  }
+
+  if (isPakPayload(bytes)) {
+    progress?.(58, "Loading cached PAK");
+    onStatus?.("Loading cached URL PAK...");
+    log?.(`Using cached URL PAK (${formatByteCount(bytes.byteLength)})...`);
+    return bytes;
+  }
+
+  log?.("Cached URL PAK was invalid; clearing it and fetching again...");
+  try {
+    await clearCachedUrlPak(sourceUrl);
+  } catch (error) {
+    log?.(`Could not clear invalid cached URL PAK: ${formatError(error)}`);
+  }
+
+  return null;
+}
+
+function cacheUrlPakBytes(sourceUrl, pakBytes, log) {
+  if (!isPakPayload(pakBytes)) {
+    return;
+  }
+
+  const byteLength = pakBytes.byteLength;
+  window.setTimeout(() => {
+    saveCachedUrlPak(sourceUrl, pakBytes, {
+      name: "URL pak0.pak"
+    })
+      .then(() => {
+        log?.(`Cached URL PAK for future launches (${formatByteCount(byteLength)})`);
+      })
+      .catch((error) => {
+        log?.(`Could not cache URL PAK: ${formatError(error)}`);
+      });
+  }, 0);
 }
 
 async function readUrlPakBytes(source, onStatus, log, progress) {

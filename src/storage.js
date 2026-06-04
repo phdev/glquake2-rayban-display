@@ -2,6 +2,8 @@ const DB_NAME = "glquake2-display";
 const DB_VERSION = 1;
 const STORE_NAME = "packages";
 const PAK_KEY = "baseq2/pak0.pak";
+const URL_PAK_CACHE_VERSION = "v1";
+const URL_PAK_PREFIX = `urlpak:${URL_PAK_CACHE_VERSION}:`;
 const LEGACY_BLOB_TIMEOUT_MS = 60000;
 
 function openDatabase() {
@@ -88,6 +90,52 @@ export async function readPakBytes() {
   return null;
 }
 
+export async function readCachedUrlPak(sourceUrl) {
+  if (!sourceUrl) {
+    return null;
+  }
+
+  const record = await withStore("readonly", (store) => store.get(getUrlPakKey(sourceUrl)));
+
+  if (!record || record.sourceUrl !== sourceUrl) {
+    return null;
+  }
+
+  return toUint8Array(record.bytes);
+}
+
+export async function saveCachedUrlPak(sourceUrl, bytes, metadata = {}) {
+  if (!sourceUrl) {
+    throw new Error("Cannot cache PAK without a source URL");
+  }
+
+  const pakBytes = toUint8Array(bytes);
+  if (!pakBytes) {
+    throw new Error("Cannot cache empty PAK data");
+  }
+
+  const record = {
+    key: getUrlPakKey(sourceUrl),
+    sourceUrl,
+    name: metadata.name || "URL pak0.pak",
+    size: pakBytes.byteLength,
+    type: metadata.type || "application/octet-stream",
+    updatedAt: new Date().toISOString(),
+    bytes: copyToArrayBuffer(pakBytes)
+  };
+
+  await withStore("readwrite", (store) => store.put(record));
+  return getRecordInfo(record);
+}
+
+export async function clearCachedUrlPak(sourceUrl) {
+  if (!sourceUrl) {
+    return;
+  }
+
+  await withStore("readwrite", (store) => store.delete(getUrlPakKey(sourceUrl)));
+}
+
 export async function clearPakFile() {
   await withStore("readwrite", (store) => store.delete(PAK_KEY));
 }
@@ -117,6 +165,10 @@ function getRecordInfo(record) {
   };
 }
 
+function getUrlPakKey(sourceUrl) {
+  return `${URL_PAK_PREFIX}${sourceUrl}`;
+}
+
 function toUint8Array(value) {
   if (!value) {
     return null;
@@ -135,6 +187,10 @@ function toUint8Array(value) {
   }
 
   return null;
+}
+
+function copyToArrayBuffer(bytes) {
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
 }
 
 function withTimeout(promise, ms, message) {
