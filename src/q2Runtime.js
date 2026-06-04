@@ -345,6 +345,7 @@ function buildArguments(config) {
     "+set", "vid_height", String(config.height),
     "+set", "gl_msaa_samples", "0",
     "+set", "s_initsound", config.audioEnabled ? "1" : "0",
+    "+set", "skill", "0",
     "+set", "cl_run", "0",
     "+set", "cl_forwardspeed", config.inputMode === "wearable" ? "120" : "200",
     "+set", "cl_sidespeed", "120"
@@ -391,6 +392,7 @@ function buildWasmConfig(config) {
     "set sensitivity \"6\"",
     "set cl_run \"0\"",
     "set vid_fullscreen \"0\"",
+    "set skill \"0\"",
     `set r_customwidth "${config.width}"`,
     `set r_customheight "${config.height}"`,
     `set vid_width "${config.width}"`,
