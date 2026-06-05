@@ -1,5 +1,9 @@
 # GLQuake II Display
 
+<video src="media/video-4010_singular_display_under20mb.mp4" controls muted playsinline width="100%"></video>
+
+[Watch demo video](media/video-4010_singular_display_under20mb.mp4)
+
 This is an open-source Quake II-compatible engine/demo for Meta Ray-Ban Display. It is designed around a Qwasm2/Yamagi Quake II engine build, a user-supplied `baseq2/pak0.pak`, Meta Neural Band gesture input, and W3C `DeviceOrientationEvent` head turning.
 
 This repo does not include Quake II game data. To play, users must own Quake II and provide their own `baseq2/pak0.pak`.
